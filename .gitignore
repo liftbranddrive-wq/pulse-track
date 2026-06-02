@@ -1,0 +1,42 @@
+# Dependencies (huge — installed on server with npm install)
+node_modules/
+
+# Secrets — NEVER commit these
+.env
+.env.local
+.env.development.local
+.env.production
+.env.production.local
+.env.*.local
+
+# Build outputs (created on server / PC during deploy)
+dist/
+build/
+.cache/
+.parcel-cache/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pm2.log
+logs/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor folders
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Prisma local artifacts (regenerated on server)
+backend/node_modules/.prisma/
+
+# Test / coverage
+coverage/
+.nyc_output/

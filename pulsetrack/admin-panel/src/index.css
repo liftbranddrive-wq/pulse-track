@@ -1,0 +1,75 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-page text-ink transition-colors duration-300;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  html.dark body {
+    @apply bg-slate-950 text-slate-100;
+  }
+
+  html.dark .bg-page {
+    @apply bg-slate-950;
+  }
+
+  html.dark .bg-surface {
+    @apply bg-slate-900;
+  }
+
+  html.dark .text-ink {
+    @apply text-slate-100;
+  }
+
+  html.dark .text-muted {
+    @apply text-slate-400;
+  }
+
+  html.dark .border-line {
+    @apply border-slate-700;
+  }
+
+  html.dark .shadow-soft {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  html.dark .hover\:bg-black\/\[0\.04\]:hover {
+    @apply bg-white/5;
+  }
+
+  html.dark .hover\:bg-black\/\[0\.02\]:hover {
+    @apply bg-white/[0.03];
+  }
+
+  html.dark .bg-black\/10 {
+    @apply bg-white/10;
+  }
+
+  html.dark .bg-black\/\[0\.02\] {
+    @apply bg-white/[0.03];
+  }
+
+  html.dark .divide-line > :not([hidden]) ~ :not([hidden]) {
+    @apply border-slate-700;
+  }
+
+  html.dark input,
+  html.dark select,
+  html.dark textarea {
+    @apply bg-slate-800 border-slate-600 text-slate-100;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.25s;
+    animation-timing-function: cubic-bezier(0.19, 1, 0.22, 1);
+  }
+}

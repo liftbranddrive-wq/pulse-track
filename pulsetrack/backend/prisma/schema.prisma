@@ -1,0 +1,506 @@
+// PulseTrack — PostgreSQL schema (see README for configurable DB guidance)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+enum SessionStatus {
+  CLOCKED_OUT
+  WORKING
+  ON_BREAK
+  PAUSED_MANUAL
+  IDLE
+  GHOST
+}
+
+enum SegmentType {
+  ACTIVE
+  IDLE
+  BREAK
+  GHOST
+  MANUAL_PAUSE
+}
+
+enum BreakType {
+  SHORT
+  LUNCH
+  PERSONAL
+}
+
+enum FlagType {
+  GHOST_TIMER
+  REMINDER_IGNORER
+  LOW_ACTIVITY_SCORE
+  INSTANT_CLOCKOUT
+  OFF_HOURS_LOW_ACTIVITY
+}
+
+enum ReminderLevel {
+  L1
+  L2
+  L3
+}
+
+enum EmailProvider {
+  SMTP
+  SENDGRID
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  ON_LEAVE
+  NOT_CLOCKED
+}
+
+enum LeaveType {
+  SICK
+  PERSONAL
+  VACATION
+  EMERGENCY
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AnomalyType {
+  NEW_DEVICE
+  IP_CHANGE
+  DUAL_IP
+  HEARTBEAT_GAP
+  SHORT_SESSION
+  EXCESSIVE_HOURS
+  CLOCK_WINDOW_VIOLATION
+  GRACE_ABUSE
+  CHALLENGE_FAILED
+}
+
+enum PointTrigger {
+  SYSTEM
+  ADMIN
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  SUCCESS
+  DANGER
+}
+
+model User {
+  id                      String           @id @default(cuid())
+  email                   String           @unique
+  passwordHash            String
+  name                    String
+  jobTitle                String?
+  role                    Role             @default(MEMBER)
+  active                  Boolean          @default(true)
+  avatarUrl               String?
+  inactivityThresholdMin  Int              @default(15)
+  preferredTheme          String?          @default("dark")
+
+  expectedStartMin        Int?             // minutes from midnight local expected
+  expectedEndMin          Int?
+  expectedDailyHoursMin   Int?             @default(480)
+
+  timezone                String           @default("UTC")
+  department              String?
+  deviceFingerprint       String?
+  authorizedDevices       Json?            // string[] fingerprints
+  authorizedIPs           Json?            // string[] IPs
+  points                  Int              @default(0)
+  streakDays              Int              @default(0)
+  perfectStreakStart      DateTime?
+
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  refreshTokens           RefreshToken[]
+  workSessions            WorkSession[]
+  flags                   CheatFlag[]
+  auditActions            AuditLog[]       @relation("AuditActor")
+
+  remindersReceived       InactivityReminder[]
+  attendanceRecords       AttendanceRecord[]
+  leaveRequests           LeaveRequest[]
+  pointTransactions       PointTransaction[]
+  anomalies               AnomalyLog[]
+  notifications           Notification[]   @relation("NotificationRecipient")
+  reviewedLeaves          LeaveRequest[]   @relation("LeaveReviewer")
+  resolvedAnomalies       AnomalyLog[]     @relation("AnomalyResolver")
+  earlyStartRequests      EarlyStartRequest[]
+  reviewedEarlyStarts     EarlyStartRequest[] @relation("EarlyStartReviewer")
+
+  individualEmailOptIn    Boolean          @default(true)
+}
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model OrgSettings {
+  id                        String          @id @default("singleton")
+  companyName               String          @default("My Team")
+
+  globalL1Min               Int             @default(5)
+  globalL2Min               Int             @default(10)
+  globalL3Min               Int             @default(15)
+
+  ghostContinuousMin        Int             @default(30)
+  ghostDayRatioThreshold    Float           @default(0.30)
+  reminderL2DailyThreshold  Int             @default(3)
+  lowActivityWeeklyDays     Int             @default(3)
+  lowActivityScoreThreshold Float           @default(50)
+  oddHoursVarianceMin       Int             @default(120)
+
+  expectedWindowStartMin    Int             @default(540) // 9:00
+  expectedWindowEndMin      Int             @default(1080) // 18:00
+  graceMinutes              Int             @default(5)
+  requiredHoursMin          Int             @default(480)
+  clockInWindowBeforeMin    Int             @default(30)
+  clockInWindowAfterMin     Int             @default(120)
+  maxEarlyStartMin          Int             @default(240)
+
+  activityChallengeEnabled  Boolean         @default(false)
+  activityChallengeIntervalMin Int          @default(45)
+  heartbeatTimeoutMin       Int             @default(15)
+
+  pointRules                Json?           // { onTimeClockIn: 5, fullHours: 10, ... }
+
+  allowMemberTimeEdits      Boolean         @default(false)
+  customReminderTemplate    String?
+
+  emailProvider             EmailProvider   @default(SMTP)
+  smtpHost                  String?
+  smtpPort                  Int?
+  smtpUser                  String?
+  smtpPass                  String?
+  smtpFrom                  String?
+
+  sendgridApiKey           String?
+
+  weeklyTeamReportEnabled   Boolean         @default(true)
+  weeklyReportCron          String          @default("0 9 * * 1")
+  dailySummaryEnabled       Boolean         @default(false)
+  dailySummaryCron          String          @default("0 19 * * *")
+  individualWeeklyEnabled   Boolean         @default(true)
+  flagAlertEnabled          Boolean         @default(true)
+  absenteeAlertEnabled      Boolean         @default(false)
+  absenteeTriggerCron       String          @default("0 11 * * 1-5")
+
+  weeklyReportRecipients    Json?           // string[] emails
+  adminSummaryRecipients    Json?
+  timezone                  String          @default("UTC")
+  logoUrl                   String?
+
+  updatedAt                DateTime        @updatedAt
+}
+
+model WorkSession {
+  id                    String           @id @default(cuid())
+  userId                String
+
+  clockIn               DateTime
+  clockOut              DateTime?
+
+  status               SessionStatus     @default(WORKING)
+
+  totalPausedMs        Int               @default(0)
+  totalBreakMs         Int               @default(0)
+  totalActiveMs        Int               @default(0)
+  totalIdleMs          Int               @default(0)
+  totalGhostMs         Int               @default(0)
+
+  activityRatio        Float?           // computed on clock-out
+
+  l1Sent               Int               @default(0)
+  l2Sent               Int               @default(0)
+  l3Sent               Int               @default(0)
+
+  ipAddress            String?
+  clockOutIp           String?
+  deviceFingerprint    String?
+  lastHeartbeat        DateTime?
+  sessionPaused        Boolean           @default(false)
+  lateNote             String?
+  attendanceRecordId   String?           @unique
+
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendanceRecord AttendanceRecord? @relation(fields: [attendanceRecordId], references: [id], onDelete: SetNull)
+
+  segments   SessionSegment[]
+  breaks     BreakRecord[]
+  reminders  InactivityReminder[]
+  edits      TimeEdit[]
+
+  @@index([userId, clockIn])
+}
+
+model SessionSegment {
+  id          String       @id @default(cuid())
+  sessionId   String
+  type        SegmentType
+  startedAt   DateTime
+  endedAt     DateTime?
+
+  remindersBeforeEnd Int   @default(0)
+
+  session WorkSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model BreakRecord {
+  id          String     @id @default(cuid())
+  sessionId   String
+  type        BreakType
+  startedAt   DateTime
+  endedAt     DateTime?
+
+  session WorkSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model InactivityReminder {
+  id           String          @id @default(cuid())
+  sessionId    String
+  userId       String
+  level        ReminderLevel
+  sentAt       DateTime        @default(now())
+  respondedAt  DateTime?
+  responseDelaySec Int?
+
+  session WorkSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sentAt])
+  @@index([sessionId])
+}
+
+model CheatFlag {
+  id               String      @id @default(cuid())
+  userId           String
+  day              DateTime    // utc day anchor
+  type             FlagType
+  summary          String
+  payload          Json?
+
+  dismissed        Boolean     @default(false)
+  dismissedAt      DateTime?
+  dismissedNote    String?
+  dismissedById    String?
+
+  createdAt        DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, day])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  reason     String?
+  diffJson   Json?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+}
+
+model TimeEdit {
+  id           String       @id @default(cuid())
+  sessionId    String
+  editorId     String
+  previousJson Json
+  updatedJson  Json
+  reason       String?
+  createdAt    DateTime     @default(now())
+
+  session WorkSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model EmailLog {
+  id          String       @id @default(cuid())
+  type        String
+  recipient   String
+  status      EmailStatus   @default(PENDING)
+  error       String?
+  payloadRef  String?
+  createdAt   DateTime      @default(now())
+  bullJobId   String?
+
+  @@index([createdAt])
+}
+
+model ScheduledDedup {
+  key        String   @id
+  runAt      DateTime
+}
+
+model AttendanceRecord {
+  id                  String            @id @default(cuid())
+  userId              String
+  date                DateTime          // UTC day anchor
+  sessionId           String?
+  clockInTime         DateTime?
+  clockOutTime        DateTime?
+  scheduledClockIn    Int               // minutes from midnight
+  scheduledClockOut   Int
+  status              AttendanceStatus  @default(NOT_CLOCKED)
+  lateMinutes         Int               @default(0)
+  totalHoursWorked    Float             @default(0)
+  requiredHours       Float             @default(8)
+  isComplete          Boolean           @default(false)
+  lateNote            String?
+  overtimeHours       Float             @default(0)
+  ipAddress           String?
+  clockOutIp          String?
+  deviceFingerprint   String?
+  heartbeatLog        Json?
+  graceUsed           Boolean           @default(false)
+  isEarlyStart        Boolean           @default(false)
+  earlyNote           String?
+  earlyMinutes        Int               @default(0)
+  earlyStartRequestId String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session WorkSession?
+
+  @@unique([userId, date])
+  @@index([date])
+  @@index([userId, date])
+}
+
+model LeaveRequest {
+  id            String       @id @default(cuid())
+  userId        String
+  requestedDate DateTime
+  endDate       DateTime?
+  type          LeaveType
+  reason        String
+  status        LeaveStatus  @default(PENDING)
+  submittedAt   DateTime     @default(now())
+  reviewedById  String?
+  reviewedAt    DateTime?
+  adminNote     String?
+  isEmergency   Boolean      @default(false)
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("LeaveReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, requestedDate])
+  @@index([status])
+}
+
+model EarlyStartRequest {
+  id                  String       @id @default(cuid())
+  userId              String
+  workDate            DateTime
+  requestedClockInMin Int
+  reason              String
+  status              LeaveStatus  @default(PENDING)
+  submittedAt         DateTime     @default(now())
+  reviewedById        String?
+  reviewedAt          DateTime?
+  adminNote           String?
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("EarlyStartReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, workDate])
+  @@index([status, workDate])
+}
+
+model PointTransaction {
+  id              String       @id @default(cuid())
+  userId          String
+  date            DateTime     @default(now())
+  type            String       // earn | deduct | redeem | admin_adjust
+  points          Int
+  description     String
+  triggeredBy     PointTrigger @default(SYSTEM)
+  relatedRecordId String?
+  balanceBefore   Int
+  balanceAfter    Int
+  createdAt       DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model AnomalyLog {
+  id                String       @id @default(cuid())
+  userId            String
+  timestamp         DateTime     @default(now())
+  type              AnomalyType
+  details           Json?
+  ipAddress         String?
+  deviceFingerprint String?
+  resolved          Boolean      @default(false)
+  resolvedById      String?
+  resolvedAt        DateTime?
+  resolution        String?
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resolvedBy User? @relation("AnomalyResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, timestamp])
+  @@index([resolved, timestamp])
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  recipientId String
+  type        NotificationType @default(INFO)
+  category    String
+  message     String
+  relatedId   String?
+  read        Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  recipient User @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, read, createdAt])
+}

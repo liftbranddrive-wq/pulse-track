@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body class="wrap">
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="32" height="32" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1" y="1" width="30" height="30" rx="8" fill="#3d2b1f"/>
+            <circle cx="16" cy="16" r="11" fill="#faf7f2" stroke="#3d2b1f" stroke-width="1.2"/>
+            <line x1="16" y1="16" x2="16" y2="9" stroke="#3d2b1f" stroke-width="2" stroke-linecap="round"/>
+            <line x1="16" y1="16" x2="21" y2="13" stroke="#3d2b1f" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="16" cy="16" r="1.8" fill="#c9a227"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">Liftbrand PulseTrack</div>
+          <div class="brand-sub">Honest hours · fair breaks</div>
+        </div>
+      </div>
+    </header>
+
+    <section id="authView" class="card">
+      <p class="hint">Use your <strong>worker (MEMBER)</strong> login — not the admin website login unless you were set up as MEMBER too.</p>
+      <label class="label" for="apiBase">Company API</label>
+      <input id="apiBase" class="field" placeholder="https://api.liftbrandfulfillment.com" />
+      <label class="label" for="email">Email</label>
+      <input id="email" class="field" type="email" autocomplete="username" placeholder="member@pulsetrack.local" />
+      <label class="label" for="password">Password</label>
+      <input id="password" class="field" type="password" autocomplete="current-password" placeholder="Your member password" />
+      <p class="hint hint-small">First-time demo: <code>member@pulsetrack.local</code> / <code>changeme12345</code> — change after you add real staff in admin → Members.</p>
+      <button type="button" id="loginBtn" class="btn btn-primary block">Sign in</button>
+    </section>
+
+    <section id="appView" class="hidden">
+      <nav class="tab-nav" id="tabNav">
+        <button type="button" class="tab active" data-tab="work">Work</button>
+        <button type="button" class="tab" data-tab="leave">Leave</button>
+        <button type="button" class="tab" data-tab="points">Points</button>
+        <button type="button" class="tab" data-tab="record">My record</button>
+      </nav>
+
+      <div id="tabWork" class="tab-panel">
+      <div class="user-row">
+        <div class="avatar" id="avatar">LB</div>
+        <div class="user-meta">
+          <div class="user-name" id="userName">—</div>
+          <span class="pill" id="pill">Clocked out</span>
+        </div>
+        <span class="heartbeat-dot" id="heartbeatDot" title="Connection"></span>
+        <button type="button" id="signOutBtn" class="btn btn-ghost sign-out-btn" title="Sign out">Sign out</button>
+      </div>
+
+      <div id="scheduleHint" class="schedule-hint hidden"></div>
+
+      <div id="earlyStartPanel" class="early-panel hidden">
+        <div class="sum-title">Early start window</div>
+        <p id="earlyStartMsg" class="hint hint-small"></p>
+      </div>
+
+      <div class="timer-card">
+        <div class="timer-label">Active work time</div>
+        <div class="timer mono" id="timer">00:00:00</div>
+        <div class="progress-wrap hidden" id="progressWrap">
+          <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+          <div class="progress-label" id="progressLabel">0% of required hours</div>
+        </div>
+        <div class="hours-due hidden" id="hoursDueHint"></div>
+        <div class="timer-hint" id="timerHint">Clock in to start tracking</div>
+      </div>
+
+      <div class="actions">
+        <button type="button" id="clockInBtn" class="btn btn-primary block">Clock In</button>
+        <button type="button" id="clockInLateBtn" class="btn btn-warn block hidden">Clock in (you are late)</button>
+        <button type="button" id="clockOutBtn" class="btn btn-outline block hidden">Clock Out</button>
+        <button type="button" id="breakBtn" class="btn btn-secondary block hidden">Take Break</button>
+        <button type="button" id="resumeBtn" class="btn btn-primary block hidden">Resume Work</button>
+        <button type="button" id="pauseBtn" class="btn btn-ghost block hidden">Pause — not working</button>
+        <button type="button" id="manualResumeBtn" class="btn btn-primary block hidden">Resume after pause</button>
+        <button type="button" id="resumeFocusBtn" class="btn btn-warn block hidden">Resume focus (I’m back)</button>
+      </div>
+
+      <div class="break-row hidden" id="breakRow">
+        <label class="label" for="breakType">Break type</label>
+        <select id="breakType" class="field select">
+          <option value="SHORT">Short break (5–15 min)</option>
+          <option value="LUNCH">Lunch</option>
+          <option value="PERSONAL">Personal</option>
+        </select>
+      </div>
+
+      <div class="summary card-sub">
+        <div class="sum-title">Today (saved to server)</div>
+        <div id="todaySummary" class="sum-grid">Loading…</div>
+        <div class="quote" id="quote"></div>
+      </div>
+      </div>
+
+      <div id="tabLeave" class="tab-panel hidden">
+        <div class="card-sub leave-form">
+          <div class="sum-title">Request leave</div>
+          <p class="hint hint-small">Standard leave: 3+ days ahead. Emergency: same-day (manual review).</p>
+          <label class="label" for="leaveDate">Date</label>
+          <input id="leaveDate" class="field" type="date" />
+          <label class="label" for="leaveType">Type</label>
+          <select id="leaveType" class="field select">
+            <option value="SICK">Sick</option>
+            <option value="PERSONAL">Personal</option>
+            <option value="VACATION">Vacation</option>
+            <option value="EMERGENCY">Emergency</option>
+          </select>
+          <label class="flex gap-2 items-center mt-2">
+            <input type="checkbox" id="leaveEmergency" />
+            <span class="hint">Emergency (same-day, not auto-approved)</span>
+          </label>
+          <label class="label" for="leaveReason">Reason (min 30 chars)</label>
+          <textarea id="leaveReason" class="field textarea" rows="3" placeholder="Why do you need this leave?"></textarea>
+          <button type="button" id="submitLeaveBtn" class="btn btn-primary block mt-2">Submit request</button>
+        </div>
+        <div class="card-sub mt-3">
+          <div class="sum-title">Your requests</div>
+          <div id="leaveHistory" class="leave-history">Loading…</div>
+        </div>
+      </div>
+
+      <div id="tabPoints" class="tab-panel hidden">
+        <div class="points-hero">
+          <div class="points-big" id="pointsBalance">0</div>
+          <div class="points-label">Total points</div>
+          <div class="points-today" id="pointsToday">Today: +0</div>
+          <div class="streak" id="streakLabel">🔥 0-day streak</div>
+        </div>
+        <div class="card-sub">
+          <div class="sum-title">Recent earnings</div>
+          <div id="pointsHistory" class="points-list">Loading…</div>
+        </div>
+      </div>
+
+      <div id="tabRecord" class="tab-panel hidden">
+        <div class="card-sub">
+          <div class="record-header">
+            <button type="button" id="calPrev" class="cal-nav" aria-label="Previous month">‹</button>
+            <div class="sum-title" id="calTitle">—</div>
+            <button type="button" id="calNext" class="cal-nav" aria-label="Next month">›</button>
+          </div>
+          <div class="sum-title perf-heading">Monthly performance</div>
+          <div id="monthlyPerformance" class="monthly-performance">Loading…</div>
+          <div class="cal-legend">
+            <span class="leg present">Present</span>
+            <span class="leg late">Late</span>
+            <span class="leg absent">Absent</span>
+            <span class="leg leave">Leave</span>
+          </div>
+          <p class="hint hint-small cal-tip">Tap a colored day for details.</p>
+          <div class="cal-grid cal-weekdays">
+            <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+          </div>
+          <div id="calGrid" class="cal-grid cal-days"></div>
+          <div id="calStats" class="cal-stats">Loading…</div>
+        </div>
+      </div>
+
+      <div id="lateModal" class="modal hidden">
+        <div class="modal-card">
+          <h3>You are late</h3>
+          <p class="hint" id="lateModalMsg">Please explain why (min 20 characters).</p>
+          <textarea id="lateNote" class="field textarea" rows="4" placeholder="Why are you late? Be specific."></textarea>
+          <div class="modal-actions">
+            <button type="button" id="lateCancelBtn" class="btn btn-ghost">Cancel</button>
+            <button type="button" id="lateSubmitBtn" class="btn btn-primary">Submit & clock in</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="earlyModal" class="modal hidden">
+        <div class="modal-card">
+          <h3>Early start note</h3>
+          <p class="hint" id="earlyModalMsg">You're starting before the normal window. Explain why (min 20 characters). You must still complete your full required hours today.</p>
+          <textarea id="earlyNote" class="field textarea" rows="4" placeholder="Why do you need to start early today?"></textarea>
+          <div class="modal-actions">
+            <button type="button" id="earlyCancelBtn" class="btn btn-ghost">Cancel</button>
+            <button type="button" id="earlySubmitBtn" class="btn btn-primary">Submit & clock in</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="dayDetailModal" class="modal hidden">
+        <div class="modal-card">
+          <div id="dayDetailBody" class="day-detail-body"></div>
+          <div class="modal-actions">
+            <button type="button" id="dayDetailCloseBtn" class="btn btn-primary">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="clockOutModal" class="modal hidden">
+        <div class="modal-card">
+          <h3>Clock out?</h3>
+          <p id="clockOutSummary" class="hint"></p>
+          <div class="modal-actions">
+            <button type="button" id="clockOutCancelBtn" class="btn btn-ghost">Cancel</button>
+            <button type="button" id="clockOutConfirmBtn" class="btn btn-primary">Confirm</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <a id="reportLink" class="footer-link hidden" href="#" target="_blank" rel="noopener noreferrer">Open admin report ↗</a>
+      <div id="toast" class="toast" aria-live="polite"></div>
+    </footer>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>

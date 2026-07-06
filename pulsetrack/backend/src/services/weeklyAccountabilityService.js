@@ -6,8 +6,26 @@ import {
   resolveTimezone,
   formatInstantInTimezone,
 } from '../utils/time.js';
+import { isUserOnLeaveForDay } from './leaveService.js';
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const SUNDAY_INDEX = 6;
+
+/** Mon–Sat are working days; Sunday is the only weekly off day. */
+function isWeeklyHoliday(dayIndex) {
+  return dayIndex === SUNDAY_INDEX;
+}
+
+function isScheduledWorkDay(dayIndex) {
+  return !isWeeklyHoliday(dayIndex);
+}
+
+/** Day has ended in org timezone (or full week is already over). */
+function isDayAccountable(dayStart, timezone, weekEndExclusive) {
+  const todayStart = dayStartForTimezone(new Date(), timezone);
+  const weekEnded = weekEndExclusive.getTime() <= todayStart.getTime();
+  return weekEnded || dayStart.getTime() < todayStart.getTime();
+}
 
 function parseWeekStartKey(weekStartStr, timezone) {
   const tz = timezone || 'Asia/Karachi';
@@ -63,13 +81,15 @@ function formatWeekLabel(mondayStart, sundayStart, timezone) {
   return `${mon.date} – ${sun.date}`;
 }
 
-function statusEmoji(status, isComplete, worked, required) {
-  if (status === AttendanceStatus.ON_LEAVE) return '🏖️';
-  if (status === AttendanceStatus.ABSENT) return '❌';
-  if (status === AttendanceStatus.HALF_DAY) return '⚠️';
-  if (isComplete) return '✅';
-  if (worked > 0) return '⚠️';
-  if (status === AttendanceStatus.LATE) return '🕐';
+function statusEmoji(day) {
+  if (day.isHoliday) return '🌙';
+  if (day.dayKind === 'leave') return '🏖️';
+  if (day.dayKind === 'absent' || day.dayKind === 'missed') return '❌';
+  if (day.status === AttendanceStatus.HALF_DAY) return '⚠️';
+  if (day.isComplete) return '✅';
+  if (day.worked > 0) return '⚠️';
+  if (day.status === AttendanceStatus.LATE) return '🕐';
+  if (day.dayKind === 'pending') return '⏳';
   return '—';
 }
 
@@ -84,11 +104,13 @@ function formatHours(h) {
 }
 
 function computeTier(summary) {
-  const { completionPct, absentDays, lateDays, workDays } = summary;
-  if (workDays === 0 && absentDays === 0) return 'no_data';
-  if (completionPct >= 95 && absentDays === 0 && lateDays <= 1) return 'excellent';
-  if (completionPct >= 80 && absentDays <= 1) return 'good';
-  if (completionPct >= 60 || (workDays >= 3 && absentDays <= 2)) return 'needs_improvement';
+  const { completionPct, absentDays, missedDays, lateDays, workDays, scheduledWorkDays } = summary;
+  const totalAbsences = absentDays + missedDays;
+  if (scheduledWorkDays === 0) return 'no_data';
+  if (workDays === 0 && totalAbsences === 0) return 'no_data';
+  if (completionPct >= 95 && totalAbsences === 0 && lateDays <= 1) return 'excellent';
+  if (completionPct >= 80 && totalAbsences <= 1) return 'good';
+  if (completionPct >= 60 || (workDays >= 3 && totalAbsences <= 2)) return 'needs_improvement';
   return 'critical';
 }
 
@@ -130,16 +152,20 @@ function buildWhatsAppMessage({ user, org, week, summary, days, tier }) {
   const personal = pickTierMessage(tier, user.name);
 
   const dayLines = days.map((d) => {
-    if (d.status === AttendanceStatus.ON_LEAVE) {
-      return `• ${d.dayName}: On leave 🏖️`;
+    if (d.isHoliday) {
+      return `• ${d.dayName}: Weekly off (Sunday) 🌙`;
     }
-    if (d.status === AttendanceStatus.ABSENT) {
-      return `• ${d.dayName}: Absent ❌ (0h / ${formatHours(d.required)} required)`;
+    if (d.dayKind === 'leave') {
+      return `• ${d.dayName}: Approved leave 🏖️`;
     }
-    if (d.status === AttendanceStatus.NOT_CLOCKED && d.worked <= 0) {
-      return `• ${d.dayName}: No clock-in —`;
+    if (d.dayKind === 'absent' || d.dayKind === 'missed') {
+      const label = d.dayKind === 'missed' ? 'Did not clock in' : 'Absent';
+      return `• ${d.dayName}: ${label} ❌ (0h / ${formatHours(d.required)} required)`;
     }
-    const icon = statusEmoji(d.status, d.isComplete, d.worked, d.required);
+    if (d.dayKind === 'pending') {
+      return `• ${d.dayName}: In progress / not due yet ⏳`;
+    }
+    const icon = statusEmoji(d);
     const short = d.shortfall > 0 ? ` · short ${formatHours(d.shortfall)}` : '';
     const late = d.status === AttendanceStatus.LATE && d.lateMinutes > 0
       ? ` · late ${d.lateMinutes}m`
@@ -176,12 +202,14 @@ function buildWhatsAppMessage({ user, org, week, summary, days, tier }) {
       : `✅ Target met — ${summary.completionPct}% completion`,
     summary.overtimeHours > 0 ? `⏱️ Overtime: +${formatHours(summary.overtimeHours)}` : null,
     '',
-    `*Attendance:*`,
+    `*Attendance (Mon–Sat working days, Sunday off):*`,
     `• Present on-time: ${summary.presentDays}`,
     `• Late: ${summary.lateDays}`,
-    `• Absent: ${summary.absentDays}`,
-    summary.onLeaveDays > 0 ? `• On leave: ${summary.onLeaveDays}` : null,
-    `• Full-hour days: ${summary.completeDays} / ${summary.workDays} work days`,
+    `• Absent / no clock-in: ${summary.absentDays + summary.missedDays}`,
+    summary.absentDays > 0 ? `  ↳ Marked absent: ${summary.absentDays}` : null,
+    summary.missedDays > 0 ? `  ↳ No clock-in (e.g. Saturday): ${summary.missedDays}` : null,
+    summary.onLeaveDays > 0 ? `• Approved leave: ${summary.onLeaveDays}` : null,
+    `• Full-hour days: ${summary.completeDays} / ${summary.workDays} working days`,
     '',
     `*Points:*`,
     pointsSection,
@@ -190,7 +218,7 @@ function buildWhatsAppMessage({ user, org, week, summary, days, tier }) {
     `*Feedback:*`,
     personal,
     '',
-    `🎯 *Goal this week:* Complete ${formatHours(reqPerDay)} every working day. Clock in on time, stay focused, and finish strong.`,
+    `🎯 *Goal this week:* Complete ${formatHours(reqPerDay)} every working day (Mon–Sat). Sunday is off. Clock in on time — including Saturdays.`,
     '',
     '— Management',
   ]
@@ -224,9 +252,11 @@ async function buildMemberReport(user, org, week, timezone) {
   let presentDays = 0;
   let lateDays = 0;
   let absentDays = 0;
+  let missedDays = 0;
   let onLeaveDays = 0;
   let completeDays = 0;
   let workDays = 0;
+  let scheduledWorkDays = 0;
   let totalHoursWorked = 0;
   let expectedHours = 0;
   let overtimeHours = 0;
@@ -236,57 +266,105 @@ async function buildMemberReport(user, org, week, timezone) {
     const rec = recordByTime.get(dayStart.getTime());
     const dayName = DAY_NAMES[i];
     const dateKey = calendarDateKeyInTimezone(dayStart, timezone);
+    const isHoliday = isWeeklyHoliday(i);
+    const accountable = isDayAccountable(dayStart, timezone, week.weekEndExclusive);
 
-    const status = rec?.status ?? AttendanceStatus.NOT_CLOCKED;
+    if (isHoliday) {
+      days.push({
+        dayName,
+        dateKey,
+        dayKind: 'holiday',
+        isHoliday: true,
+        status: 'HOLIDAY',
+        worked: 0,
+        required: 0,
+        shortfall: 0,
+        isComplete: false,
+        lateMinutes: 0,
+        clockInTime: null,
+        clockOutTime: null,
+      });
+      continue;
+    }
+
+    if (accountable) scheduledWorkDays += 1;
+
+    const rawStatus = rec?.status ?? AttendanceStatus.NOT_CLOCKED;
     const worked = rec?.totalHoursWorked ?? 0;
     const required = rec?.requiredHours ?? defaultRequired;
-    const isComplete = rec?.isComplete ?? false;
+    const hasClockIn = !!rec?.clockInTime;
+    const onLeave =
+      rawStatus === AttendanceStatus.ON_LEAVE ||
+      (await isUserOnLeaveForDay(user.id, dayStart, timezone));
+
+    let dayKind = 'worked';
+    let status = rawStatus;
+
+    if (onLeave) {
+      dayKind = 'leave';
+      status = AttendanceStatus.ON_LEAVE;
+      onLeaveDays += 1;
+    } else if (rawStatus === AttendanceStatus.ABSENT) {
+      dayKind = 'absent';
+      absentDays += 1;
+      if (accountable) {
+        workDays += 1;
+        expectedHours += required;
+      }
+    } else if (
+      accountable &&
+      !hasClockIn &&
+      worked <= 0 &&
+      (rawStatus === AttendanceStatus.NOT_CLOCKED || !rec)
+    ) {
+      dayKind = 'missed';
+      status = 'MISSED';
+      missedDays += 1;
+      workDays += 1;
+      expectedHours += required;
+    } else if (!accountable && !hasClockIn && worked <= 0) {
+      dayKind = 'pending';
+    } else {
+      if (rawStatus === AttendanceStatus.PRESENT) presentDays += 1;
+      if (rawStatus === AttendanceStatus.LATE) lateDays += 1;
+      workDays += 1;
+      expectedHours += required;
+      totalHoursWorked += worked;
+      if (rec?.isComplete) completeDays += 1;
+    }
+
     const shortfall =
-      status === AttendanceStatus.ON_LEAVE
+      dayKind === 'leave' || dayKind === 'pending' || dayKind === 'holiday'
         ? 0
         : Math.max(0, required - worked);
 
-    if (status === AttendanceStatus.PRESENT) presentDays += 1;
-    if (status === AttendanceStatus.LATE) lateDays += 1;
-    if (status === AttendanceStatus.ABSENT) absentDays += 1;
-    if (status === AttendanceStatus.ON_LEAVE) onLeaveDays += 1;
-
-    const countsAsWork =
-      status !== AttendanceStatus.ON_LEAVE &&
-      status !== AttendanceStatus.NOT_CLOCKED &&
-      (worked > 0 || status === AttendanceStatus.ABSENT);
-
-    if (countsAsWork) {
-      workDays += 1;
-      expectedHours += required;
-      totalHoursWorked += worked;
-      if (isComplete) completeDays += 1;
-    } else if (
-      status === AttendanceStatus.PRESENT ||
-      status === AttendanceStatus.LATE ||
-      status === AttendanceStatus.HALF_DAY
-    ) {
-      workDays += 1;
-      expectedHours += required;
-      totalHoursWorked += worked;
-      if (isComplete) completeDays += 1;
+    if (dayKind === 'absent' || dayKind === 'missed') {
+      // Full day shortfall already counted via expectedHours with 0 worked
+    } else if (dayKind === 'worked') {
+      overtimeHours += rec?.overtimeHours ?? 0;
     }
-
-    overtimeHours += rec?.overtimeHours ?? 0;
 
     days.push({
       dayName,
       dateKey,
+      dayKind,
+      isHoliday: false,
       status,
       worked: +worked.toFixed(2),
       required: +required.toFixed(2),
       shortfall: +shortfall.toFixed(2),
-      isComplete,
+      isComplete: rec?.isComplete ?? false,
       lateMinutes: rec?.lateMinutes ?? 0,
       clockInTime: rec?.clockInTime ?? null,
       clockOutTime: rec?.clockOutTime ?? null,
     });
   }
+
+  // Total worked hours from days that actually logged time
+  totalHoursWorked = days
+    .filter((d) => d.dayKind === 'worked')
+    .reduce((sum, d) => sum + d.worked, 0);
+  totalHoursWorked = +totalHoursWorked.toFixed(2);
 
   let pointsEarned = 0;
   let pointsDeducted = 0;
@@ -303,8 +381,10 @@ async function buildMemberReport(user, org, week, timezone) {
     presentDays,
     lateDays,
     absentDays,
+    missedDays,
     onLeaveDays,
     workDays,
+    scheduledWorkDays,
     completeDays,
     totalHoursWorked: +totalHoursWorked.toFixed(2),
     expectedHours: +expectedHours.toFixed(2),

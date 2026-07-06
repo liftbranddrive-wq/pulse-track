@@ -113,6 +113,9 @@ function MemberCard({ report, defaultOpen }) {
               ) : (
                 <span className="text-emerald-600 dark:text-emerald-400 font-semibold"> · target met</span>
               )}
+              {(s.missedDays ?? 0) > 0 ? (
+                <span className="text-rose-600 font-semibold"> · {s.missedDays} no clock-in</span>
+              ) : null}
               {' · '}
               {s.completionPct}% · {s.pointsNet >= 0 ? '+' : ''}
               {s.pointsNet} pts
@@ -137,7 +140,7 @@ function MemberCard({ report, defaultOpen }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[12px]">
             <Stat label="Required" value={formatWorkedHours(s.expectedHours)} />
             <Stat label="Complete days" value={`${s.completeDays} / ${s.workDays}`} />
-            <Stat label="Late / Absent" value={`${s.lateDays} / ${s.absentDays}`} />
+            <Stat label="Late / Absent" value={`${s.lateDays} / ${s.absentDays + (s.missedDays ?? 0)}`} />
             <Stat label="Points balance" value={`${s.totalPoints} pts`} />
           </div>
 
@@ -190,8 +193,11 @@ function Stat({ label, value }) {
 }
 
 function DayStatus({ day: d }) {
-  if (d.status === 'ON_LEAVE') return <span className="text-sky-600">On leave</span>;
-  if (d.status === 'ABSENT') return <span className="text-rose-600 font-semibold">Absent</span>;
+  if (d.isHoliday || d.dayKind === 'holiday') return <span className="text-violet-600">Sunday off</span>;
+  if (d.dayKind === 'leave' || d.status === 'ON_LEAVE') return <span className="text-sky-600">Approved leave</span>;
+  if (d.dayKind === 'missed') return <span className="text-rose-600 font-semibold">No clock-in</span>;
+  if (d.dayKind === 'absent' || d.status === 'ABSENT') return <span className="text-rose-600 font-semibold">Absent</span>;
+  if (d.dayKind === 'pending') return <span className="text-muted">Pending</span>;
   if (d.isComplete) return <span className="text-emerald-600 font-semibold">Complete</span>;
   if (d.worked > 0) return <span className="text-amber-600">Short {formatWorkedHours(d.shortfall)}</span>;
   if (d.status === 'LATE') return <span className="text-amber-600">Late</span>;
@@ -380,20 +386,20 @@ export default function WeeklyAccountability() {
         <h2 className="font-bold text-ink">How it works</h2>
         <ul className="list-disc pl-5 space-y-1.5">
           <li>
-            <strong className="text-ink">No AI needed</strong> — messages are built from real
-            attendance, hours, and points data using consistent rules (praise when strong, direct
-            accountability when short).
+            <strong className="text-ink">Working days: Monday–Saturday.</strong> Sunday is the only
+            weekly off day and is excluded from hours and ratings.
           </li>
           <li>
-            Week runs <strong className="text-ink">Monday → Sunday</strong> in your org timezone
-            (Pakistan). On Mondays at 1 PM, the system prepares the previous week automatically.
+            <strong className="text-ink">No clock-in on a work day</strong> (including Saturday)
+            counts as absent and lowers the rating — even if the system did not auto-mark absent.
           </li>
           <li>
-            Tap <strong className="text-ink">Copy message</strong> on any card and paste into
-            WhatsApp. Use filters to batch critical reviews first.
+            <strong className="text-ink">Approved leave</strong> is excluded — add leave in{' '}
+            <strong className="text-ink">Leave Management</strong> before the week is reviewed.
           </li>
           <li>
-            Part-time members use their personal hours/day from Members → Edit.
+            Tap <strong className="text-ink">Copy message</strong> and paste into WhatsApp. Messages
+            are built from real attendance, hours, and points — no AI.
           </li>
         </ul>
       </section>

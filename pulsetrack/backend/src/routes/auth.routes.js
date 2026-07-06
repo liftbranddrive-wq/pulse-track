@@ -10,6 +10,7 @@ import {
 } from '../utils/jwt.js';
 import { authLimiter } from '../middleware/rateLimit.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { registerDeviceForUser } from '../services/anomalyDetector.js';
 
 const router = Router();
 
@@ -86,30 +87,52 @@ router.post(
   },
 );
 
-router.post('/login/admin', authLimiter, async (req, res) => {
-  const Schema = z.object({ email: z.string().email(), password: z.string() });
-  const { email, password } = Schema.parse(req.body);
+async function findUserByEmail(email) {
+  const normalized = email.trim().toLowerCase();
+  return prisma.user.findFirst({
+    where: { email: { equals: normalized, mode: 'insensitive' } },
+  });
+}
 
-  const user = await prisma.user.findUnique({ where: { email } });
+router.post('/login/admin', authLimiter, async (req, res) => {
+  const Schema = z.object({
+    email: z.string().email(),
+    password: z.string(),
+    deviceFingerprint: z.string().optional(),
+  });
+  const { email, password, deviceFingerprint } = Schema.parse(req.body);
+
+  const user = await findUserByEmail(email);
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
   if (user.role !== 'ADMIN') {
-    return res.status(403).json({ error: 'Admin portal only' });
+    return res.status(403).json({
+      error: `This website is for managers (ADMIN) only. Your account is ${user.role}. Ask an admin to open Members → Make admin for your email.`,
+    });
   }
+  if (!user.active) {
+    return res.status(403).json({ error: 'Account disabled — ask another admin to enable you in Members' });
+  }
+  await registerDeviceForUser(user.id, deviceFingerprint).catch(() => {});
   return issueTokens(res, user);
 });
 
 router.post('/login/member', authLimiter, async (req, res) => {
-  const Schema = z.object({ email: z.string().email(), password: z.string() });
-  const { email, password } = Schema.parse(req.body);
+  const Schema = z.object({
+    email: z.string().email(),
+    password: z.string(),
+    deviceFingerprint: z.string().optional(),
+  });
+  const { email, password, deviceFingerprint } = Schema.parse(req.body);
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await findUserByEmail(email);
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
   if (!user.active) return res.status(403).json({ error: 'Account disabled' });
 
+  await registerDeviceForUser(user.id, deviceFingerprint).catch(() => {});
   return issueTokens(res, user);
 });
 

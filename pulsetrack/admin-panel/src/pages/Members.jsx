@@ -26,12 +26,94 @@ export default function Members() {
   }, []);
 
   async function disableMember(m) {
-    if (!window.confirm(`Disable ${m.name} (${m.email})? They will not be able to sign in.`)) return;
+    if (!window.confirm(`Disable ${m.name} (${m.email})? They cannot sign in until you enable them again.`)) return;
     setMsg('');
     setErr('');
     try {
       await api({ endpoint: `/api/admin/members/${m.id}`, method: 'DELETE' });
-      setMsg(`Disabled ${m.name}.`);
+      setMsg(`Disabled ${m.name}. You can enable them again from the list below.`);
+      await load();
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  async function enableMember(m) {
+    setMsg('');
+    setErr('');
+    try {
+      await api({
+        endpoint: `/api/admin/members/${m.id}`,
+        method: 'PATCH',
+        body: { active: true },
+      });
+      setMsg(`Enabled ${m.name} — they can sign in to admin and extension now.`);
+      await load();
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  async function resetPassword(m) {
+    const pwd = window.prompt(`New password for ${m.name} (${m.email}) — min 8 characters:`);
+    if (!pwd) return;
+    if (pwd.length < 8) {
+      setErr('Password must be at least 8 characters');
+      return;
+    }
+    setMsg('');
+    setErr('');
+    try {
+      await api({
+        endpoint: `/api/admin/members/${m.id}`,
+        method: 'PATCH',
+        body: { password: pwd },
+      });
+      setMsg(`Password updated for ${m.name}. Share the new password with them.`);
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  async function setDailyHours(m) {
+    const current = m.expectedDailyHoursMin ?? 480;
+    const hours = window.prompt(
+      `Daily required hours for ${m.name} (current: ${(current / 60).toFixed(1)}h). Enter 4, 5, 6, 8, etc:`,
+      String(current / 60),
+    );
+    if (hours === null) return;
+    const parsed = Number(hours);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 24) {
+      setErr('Enter a number between 1 and 24 hours');
+      return;
+    }
+    setMsg('');
+    setErr('');
+    try {
+      await api({
+        endpoint: `/api/admin/members/${m.id}`,
+        method: 'PATCH',
+        body: { expectedDailyHoursMin: Math.round(parsed * 60) },
+      });
+      setMsg(`${m.name} — required hours set to ${parsed}h/day.`);
+      await load();
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  async function setRole(m, role) {
+    if (m.role === role) return;
+    if (!window.confirm(`Change ${m.name} to ${role}?`)) return;
+    setMsg('');
+    setErr('');
+    try {
+      await api({
+        endpoint: `/api/admin/members/${m.id}`,
+        method: 'PATCH',
+        body: { role },
+      });
+      setMsg(`${m.name} is now ${role}.`);
       await load();
     } catch (e) {
       setErr(e.message);
@@ -68,7 +150,12 @@ export default function Members() {
       setMsg('User created — share email + password with them for the extension or admin site.');
       await load();
     } catch (e) {
-      setErr(e.message);
+      const msg = e.message || '';
+      if (/email exists/i.test(msg)) {
+        setErr('That email already exists — scroll down, find them, click Enable, then Reset password if needed.');
+      } else {
+        setErr(msg);
+      }
     }
   }
 
@@ -80,7 +167,7 @@ export default function Members() {
       <div>
         <h1 className="text-2xl font-bold text-ink tracking-tight">Team members</h1>
         <p className="text-sm text-muted mt-1">
-          Add workers (MEMBER) for the extension, or other managers (ADMIN) for this dashboard.
+          ADMIN = admin website + extension (same login). MEMBER = extension only. Disabled users cannot sign in — use Enable to turn them back on.
         </p>
       </div>
 
@@ -134,8 +221,8 @@ export default function Members() {
             value={form.role}
             onChange={(e) => setForm({ ...form, role: e.target.value })}
           >
-            <option value="MEMBER">MEMBER — uses Chrome extension only</option>
-            <option value="ADMIN">ADMIN — uses admin website</option>
+            <option value="MEMBER">MEMBER — extension only (no admin website)</option>
+            <option value="ADMIN">ADMIN — admin website + extension</option>
           </select>
         </label>
         <div className="md:col-span-2 flex items-center gap-3">
@@ -155,6 +242,7 @@ export default function Members() {
               <th className="px-4 py-3">Title</th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Role</th>
+              <th className="px-4 py-3">Hours/day</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
@@ -170,6 +258,18 @@ export default function Members() {
                 <td className="px-4 py-3 text-muted">{m.jobTitle ?? '—'}</td>
                 <td className="px-4 py-3 font-mono text-[12px] text-muted">{m.email}</td>
                 <td className="px-4 py-3 text-ink">{m.role}</td>
+                <td className="px-4 py-3 text-muted">
+                  {((m.expectedDailyHoursMin ?? 480) / 60).toFixed(1)}h
+                  {m.role === 'MEMBER' ? (
+                    <button
+                      type="button"
+                      onClick={() => setDailyHours(m)}
+                      className="ml-2 text-[11px] font-semibold text-brand hover:underline"
+                    >
+                      Edit
+                    </button>
+                  ) : null}
+                </td>
                 <td className="px-4 py-3">
                   <span
                     className={`text-[12px] font-bold px-2.5 py-1 rounded-full ring-1 ${m.active ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-100'}`}
@@ -178,17 +278,60 @@ export default function Members() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {m.active ? (
-                    <button
-                      type="button"
-                      onClick={() => disableMember(m)}
-                      className="text-[12px] font-semibold text-rose-600 hover:underline"
-                    >
-                      Disable
-                    </button>
-                  ) : (
-                    <span className="text-[12px] text-muted">—</span>
-                  )}
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {m.active ? (
+                      <>
+                        {m.role === 'MEMBER' ? (
+                          <button
+                            type="button"
+                            onClick={() => setRole(m, 'ADMIN')}
+                            className="text-[12px] font-semibold text-brand hover:underline"
+                          >
+                            Make admin
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setRole(m, 'MEMBER')}
+                            className="text-[12px] font-semibold text-muted hover:underline"
+                          >
+                            Make member
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => resetPassword(m)}
+                          className="text-[12px] font-semibold text-muted hover:underline"
+                        >
+                          Reset password
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => disableMember(m)}
+                          className="text-[12px] font-semibold text-rose-600 hover:underline"
+                        >
+                          Disable
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => enableMember(m)}
+                          className="text-[12px] font-semibold text-emerald-700 hover:underline"
+                        >
+                          Enable
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => resetPassword(m)}
+                          className="text-[12px] font-semibold text-brand hover:underline"
+                        >
+                          Reset password
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

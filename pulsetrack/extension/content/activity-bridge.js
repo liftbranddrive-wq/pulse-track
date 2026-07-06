@@ -1,5 +1,5 @@
 /**
- * Anonymous activity pulses — mouse, keyboard, scroll, click (no key content).
+ * Extra activity pulses from this Chrome tab (backup). Primary detection is whole-PC via chrome.idle in the service worker.
  */
 
 let throttleUntil = 0;

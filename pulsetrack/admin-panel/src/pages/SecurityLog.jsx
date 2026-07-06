@@ -5,12 +5,17 @@ const TYPE_LABELS = {
   NEW_DEVICE: 'New device',
   IP_CHANGE: 'IP changed mid-session',
   DUAL_IP: 'Multiple IPs same day',
-  HEARTBEAT_GAP: 'Heartbeat lost',
+  HEARTBEAT_GAP: 'Heartbeat lost (extension lost contact with server)',
   SHORT_SESSION: 'Very short session',
   EXCESSIVE_HOURS: 'Excessive hours',
   CLOCK_WINDOW_VIOLATION: 'Clock-in window violation',
   GRACE_ABUSE: 'Grace period abuse',
   CHALLENGE_FAILED: 'Activity challenge failed',
+};
+
+const TYPE_HELP = {
+  HEARTBEAT_GAP:
+    'Chrome was closed, internet dropped, or the server was busy. Usually not cheating — check if they were on Break/Pause.',
 };
 
 export default function SecurityLog() {
@@ -38,6 +43,16 @@ export default function SecurityLog() {
     await load();
   }
 
+  async function resolveAllHeartbeat() {
+    if (!window.confirm('Resolve ALL open "Heartbeat lost" entries? Use after deploying the server fix.')) return;
+    await api({
+      endpoint: '/api/notifications/anomalies/resolve-heartbeat-batch',
+      method: 'POST',
+    });
+    await load();
+  }
+
+  const heartbeatOpen = rows.filter((r) => !r.resolved && r.type === 'HEARTBEAT_GAP').length;
   const stale = rows.filter(
     (r) => !r.resolved && Date.now() - new Date(r.timestamp).getTime() > 48 * 3600_000,
   );
@@ -46,8 +61,24 @@ export default function SecurityLog() {
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-bold text-ink">Security log</h1>
-        <p className="text-sm text-muted mt-1">Anomalies, device flags, and integrity events</p>
+        <p className="text-sm text-muted mt-1">
+          Anomalies, device flags, and integrity events.{' '}
+          <strong>Heartbeat lost</strong> = extension could not ping the server (Chrome closed, Wi‑Fi drop, or server busy) — not always a problem.
+        </p>
       </header>
+
+      {heartbeatOpen > 10 ? (
+        <div className="rounded-xl bg-sky-50 border border-sky-200 px-4 py-3 text-[13px] text-sky-900 flex flex-wrap items-center gap-3">
+          <span>{heartbeatOpen} open heartbeat alerts — often caused by rate limits (now fixed on server).</span>
+          <button
+            type="button"
+            onClick={() => resolveAllHeartbeat().catch((e) => alert(e.message))}
+            className="px-3 py-1.5 rounded-lg bg-brand text-white text-[12px] font-semibold"
+          >
+            Resolve all heartbeat lost
+          </button>
+        </div>
+      ) : null}
 
       {stale.length ? (
         <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-[13px] text-amber-900 font-medium animate-pulse">
@@ -91,7 +122,12 @@ export default function SecurityLog() {
                   <tr key={r.id} className={old ? 'bg-rose-50/50' : ''}>
                     <td className="px-5 py-3 font-mono text-[12px]">{new Date(r.timestamp).toLocaleString()}</td>
                     <td className="px-5 py-3 font-medium">{r.user?.name}</td>
-                    <td className="px-5 py-3">{TYPE_LABELS[r.type] || r.type}</td>
+                    <td className="px-5 py-3">
+                      <div>{TYPE_LABELS[r.type] || r.type}</div>
+                      {TYPE_HELP[r.type] ? (
+                        <div className="text-[11px] text-muted mt-0.5 max-w-xs">{TYPE_HELP[r.type]}</div>
+                      ) : null}
+                    </td>
                     <td className="px-5 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
                         r.resolved ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'

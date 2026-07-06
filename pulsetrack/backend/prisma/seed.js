@@ -20,6 +20,7 @@ async function main() {
     create: {
       id: 'singleton',
       companyName: 'PulseTrack Demo',
+      timezone: 'Asia/Islamabad',
       expectedWindowStartMin: 540,
       expectedWindowEndMin: 1020,
       graceMinutes: 5,
@@ -36,6 +37,7 @@ async function main() {
     update: {
       graceMinutes: 5,
       requiredHoursMin: 480,
+      timezone: 'Asia/Islamabad',
     },
   });
 
@@ -69,6 +71,7 @@ async function main() {
           streakDays: i % 4,
           expectedStartMin: 540,
           expectedEndMin: 1020,
+          timezone: 'Asia/Islamabad',
         },
       });
     }

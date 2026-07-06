@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
+import TermsGlossary from '../components/TermsGlossary';
 import { formatDuration } from '../utils/format';
 
 export default function GhostTime() {
@@ -24,10 +25,28 @@ export default function GhostTime() {
       <header>
         <h1 className="text-2xl font-bold text-ink tracking-tight">Ghost time</h1>
         <p className="text-sm text-muted mt-1 max-w-3xl leading-relaxed">
-          “Ghost” time is minutes someone stayed clocked in without meaningful activity after escalated reminders. 
-          Treat this as <strong>a signal for a conversation</strong>, not proof of dishonesty — people step away without thinking.
+          <strong className="text-ink">Ghost time</strong> = clocked in but no keyboard/mouse on the <em>whole computer</em> for 15+ minutes (after reminders).
+          Active pay time pauses; ghost minutes are logged separately. Watching a video without moving counts as idle → ghost.
         </p>
       </header>
+
+      <TermsGlossary
+        title="Ghost vs idle vs active"
+        terms={[
+          {
+            term: 'Active',
+            definition: 'Keyboard/mouse anywhere on the PC while clocked in. Counts toward required hours.',
+          },
+          {
+            term: 'Idle (L1/L2)',
+            definition: '5–10 min no input — reminders only; timer still runs.',
+          },
+          {
+            term: 'Ghost (L3)',
+            definition: '15+ min no input on the PC — active timer stops until “Resume focus”. Common causes: lunch at desk watching video, phone call, stepped away.',
+          },
+        ]}
+      />
 
       <div className="rounded-xl2 border border-line bg-surface shadow-soft overflow-x-auto">
         <table className="w-full text-[13px] min-w-[640px]">

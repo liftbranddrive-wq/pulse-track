@@ -7,6 +7,8 @@ import {
   unreadCount,
 } from '../services/notificationService.js';
 import { getAnomalies, resolveAnomaly, authorizeDevice } from '../services/anomalyDetector.js';
+import { prisma } from '../db.js';
+import { AnomalyType } from '@prisma/client';
 
 const router = Router();
 
@@ -22,6 +24,20 @@ router.patch('/anomalies/:id/resolve', authMiddleware('ADMIN'), async (req, res)
   const { resolution } = Schema.parse(req.body);
   const row = await resolveAnomaly(req.params.id, req.user.id, resolution);
   return res.json(row);
+});
+
+/** Clear noisy heartbeat-lost rows after server fix (admin only). */
+router.post('/anomalies/resolve-heartbeat-batch', authMiddleware('ADMIN'), async (req, res) => {
+  const result = await prisma.anomalyLog.updateMany({
+    where: { type: AnomalyType.HEARTBEAT_GAP, resolved: false },
+    data: {
+      resolved: true,
+      resolvedById: req.user.id,
+      resolvedAt: new Date(),
+      resolution: 'Bulk resolved — connection/rate-limit fix deployed',
+    },
+  });
+  return res.json({ resolved: result.count });
 });
 
 router.patch('/users/:id/authorize-device', authMiddleware('ADMIN'), async (req, res) => {

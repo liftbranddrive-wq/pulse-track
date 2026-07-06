@@ -1,7 +1,7 @@
 import cron from 'node-cron';
-import { markAbsentForDay } from '../services/attendanceService.js';
+import { markAbsentForDay, runEndOfDayAutoClockOut } from '../services/attendanceService.js';
 import { prisma } from '../db.js';
-import { AnomalyType } from '@prisma/client';
+import { AnomalyType, SessionStatus } from '@prisma/client';
 import { enqueueEmail } from './emailQueue.js';
 
 function emailList(org, primary, fallback) {
@@ -123,6 +123,15 @@ async function runMondayJobs() {
   await tryIndividualWeeklySend();
 }
 
+async function tryWeeklyAccountabilityGeneration() {
+  const { runScheduledWeeklyAccountability } = await import(
+    '../services/weeklyAccountabilityService.js'
+  );
+  await runScheduledWeeklyAccountability().catch((e) =>
+    console.error('Weekly accountability generation failed', e),
+  );
+}
+
 async function tryAutoAbsentMarking() {
   const org = await prisma.orgSettings.findUnique({ where: { id: 'singleton' } });
   const clockInMin = org?.expectedWindowStartMin ?? 540;
@@ -158,6 +167,14 @@ async function checkHeartbeatTimeouts(app) {
     where: {
       clockOut: null,
       sessionPaused: false,
+      status: {
+        notIn: [
+          SessionStatus.ON_BREAK,
+          SessionStatus.PAUSED_MANUAL,
+          SessionStatus.GHOST,
+          SessionStatus.IDLE,
+        ],
+      },
       OR: [{ lastHeartbeat: { lt: cutoff } }, { lastHeartbeat: null }],
     },
     include: { user: { select: { id: true, name: true } } },
@@ -166,10 +183,21 @@ async function checkHeartbeatTimeouts(app) {
   for (const s of stale) {
     if (!s.lastHeartbeat && Date.now() - s.clockIn.getTime() < timeoutMin * 60_000) continue;
 
-    await prisma.workSession.update({
-      where: { id: s.id },
-      data: { sessionPaused: true },
+    const openGap = await prisma.anomalyLog.findFirst({
+      where: {
+        userId: s.userId,
+        type: AnomalyType.HEARTBEAT_GAP,
+        resolved: false,
+      },
+      orderBy: { timestamp: 'desc' },
     });
+    const gapSessionId = openGap?.details?.sessionId;
+    if (openGap && gapSessionId === s.id) continue;
+
+    const { autoPauseStaleSession } = await import('../services/sessionService.js');
+    await autoPauseStaleSession(s).catch((e) =>
+      console.error('Auto-pause stale session failed', s.id, e),
+    );
 
     const { logAnomaly } = await import('../services/anomalyDetector.js');
     await logAnomaly(s.userId, AnomalyType.HEARTBEAT_GAP, {
@@ -228,5 +256,30 @@ export function startSchedulers(app) {
       checkHeartbeatTimeouts(app).catch((e) => console.error(e));
     },
     { timezone: 'UTC' },
+  );
+
+  /** Monday 1:00 PM Pakistan — pre-generate last week's accountability digests for admin. */
+  cron.schedule(
+    '0 13 * * 1',
+    () => {
+      tryWeeklyAccountabilityGeneration().catch((e) => console.error(e));
+    },
+    { timezone: 'Asia/Karachi' },
+  );
+
+  /** 11:59 PM Pakistan — auto clock-out all open sessions for that calendar day. */
+  cron.schedule(
+    '59 23 * * *',
+    () => {
+      runEndOfDayAutoClockOut()
+        .then((r) => {
+          if (r?.closed > 0) {
+            console.log(`EOD auto clock-out: ${r.closed} session(s) on ${r.dateKey} (${r.timezone})`);
+            app.locals.io?.broadcastTeam?.().catch?.(() => {});
+          }
+        })
+        .catch((e) => console.error('EOD auto clock-out failed', e));
+    },
+    { timezone: 'Asia/Karachi' },
   );
 }

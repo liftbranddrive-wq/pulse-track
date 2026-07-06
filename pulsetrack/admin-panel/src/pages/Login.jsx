@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Activity } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -8,6 +8,11 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('pulsetrack_admin_email');
+    if (saved) setEmail(saved);
+  }, []);
 
   if (!loading && user?.role === 'ADMIN') return <Navigate to="/" replace />;
 

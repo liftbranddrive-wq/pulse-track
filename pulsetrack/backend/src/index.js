@@ -6,6 +6,15 @@ import { attachSocket } from './sockets/index.js';
 import { startSchedulers } from './jobs/scheduler.js';
 import { getOrCreateOrgSettings } from './services/orgService.js';
 
+// Safety net: never let a single bad request or a transient DB hiccup crash
+// the whole API (which would take the entire team offline with 502 errors).
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+
 async function bootstrap() {
   await prisma.$connect();
   await getOrCreateOrgSettings();

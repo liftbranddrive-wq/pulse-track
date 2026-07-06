@@ -1,14 +1,65 @@
 import { prisma } from '../db.js';
-import { DEFAULT_POINT_RULES } from '../utils/time.js';
+import { DEFAULT_POINT_RULES, FIXED_RULE_KEYS } from '../utils/time.js';
 import { createNotification } from './notificationService.js';
+import { randomUUID } from 'crypto';
+
+function normalizeCustomTasks(tasks) {
+  if (!Array.isArray(tasks)) return [];
+  return tasks
+    .filter((t) => t && typeof t.name === 'string' && t.name.trim())
+    .map((t) => ({
+      id: typeof t.id === 'string' && t.id ? t.id : randomUUID(),
+      name: t.name.trim(),
+      points: Number.isFinite(Number(t.points)) ? Math.trunc(Number(t.points)) : 0,
+      active: t.active !== false,
+    }));
+}
 
 export async function getPointRules() {
   const org = await prisma.orgSettings.findUnique({ where: { id: 'singleton' } });
   const stored = org?.pointRules;
   if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
-    return { ...DEFAULT_POINT_RULES, ...stored };
+    const merged = { ...DEFAULT_POINT_RULES, ...stored };
+    merged.customTasks = normalizeCustomTasks(stored.customTasks ?? merged.customTasks);
+    return merged;
   }
-  return { ...DEFAULT_POINT_RULES };
+  return { ...DEFAULT_POINT_RULES, customTasks: [] };
+}
+
+export async function updatePointRules(payload) {
+  const current = await getPointRules();
+  const next = { ...current };
+
+  for (const key of FIXED_RULE_KEYS) {
+    if (payload[key] != null) next[key] = Math.trunc(Number(payload[key]));
+  }
+  if (payload.customTasks != null) {
+    next.customTasks = normalizeCustomTasks(payload.customTasks);
+  }
+
+  await prisma.orgSettings.upsert({
+    where: { id: 'singleton' },
+    create: { id: 'singleton', pointRules: next },
+    update: { pointRules: next },
+  });
+
+  return getPointRules();
+}
+
+export async function awardCustomTask(userId, taskId, adminId) {
+  const rules = await getPointRules();
+  const task = (rules.customTasks ?? []).find((t) => t.id === taskId && t.active !== false);
+  if (!task) return { error: 'Task not found or inactive' };
+  if (!task.points) return { error: 'Task has zero points' };
+
+  const tx = await applyPoints(userId, {
+    points: task.points,
+    type: 'earn',
+    description: task.name,
+    triggeredBy: 'ADMIN',
+    relatedRecordId: adminId,
+  });
+  return { tx, task };
 }
 
 export async function applyPoints(userId, { points, type, description, relatedRecordId, triggeredBy = 'SYSTEM' }) {

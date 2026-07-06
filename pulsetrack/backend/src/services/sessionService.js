@@ -160,7 +160,7 @@ export async function startBreak(userId, sessionId, breakType) {
 
   await prisma.workSession.update({
     where: { id: sessionId },
-    data: { status: SessionStatus.ON_BREAK },
+    data: { status: SessionStatus.ON_BREAK, lastHeartbeat: now() },
   });
 
   await closeOpenSegment(sessionId);
@@ -206,7 +206,7 @@ export async function manualPause(userId, sessionId) {
 
   await prisma.workSession.update({
     where: { id: sessionId },
-    data: { status: SessionStatus.PAUSED_MANUAL },
+    data: { status: SessionStatus.PAUSED_MANUAL, lastHeartbeat: now() },
   });
   await closeOpenSegment(sessionId);
   await ensureOpenSegment(sessionId, SegmentType.MANUAL_PAUSE);
@@ -230,6 +230,12 @@ export async function manualResume(userId, sessionId) {
 export async function markIdle(userId, sessionId) {
   const session = await activeSession(userId);
   if (!session || session.id !== sessionId) return { error: 'No active session' };
+  if (
+    session.status === SessionStatus.ON_BREAK ||
+    session.status === SessionStatus.PAUSED_MANUAL
+  ) {
+    return session;
+  }
 
   await prisma.workSession.update({ where: { id: sessionId }, data: { status: SessionStatus.IDLE } });
   await closeOpenSegment(sessionId);
@@ -241,6 +247,12 @@ export async function markIdle(userId, sessionId) {
 export async function markGhost(userId, sessionId) {
   const session = await activeSession(userId);
   if (!session || session.id !== sessionId) return { error: 'No active session' };
+  if (
+    session.status === SessionStatus.ON_BREAK ||
+    session.status === SessionStatus.PAUSED_MANUAL
+  ) {
+    return session;
+  }
 
   await prisma.workSession.update({
     where: { id: sessionId },
@@ -255,15 +267,30 @@ export async function markGhost(userId, sessionId) {
 export async function resumeFromIdleOrGhost(userId, sessionId) {
   const session = await activeSession(userId);
   if (!session || session.id !== sessionId) return { error: 'No active session' };
+  if (
+    session.status !== SessionStatus.GHOST &&
+    session.status !== SessionStatus.IDLE
+  ) {
+    return { session, liveActiveMs: computeLiveActiveMs(session) };
+  }
 
+  const ts = now();
   await prisma.workSession.update({
     where: { id: sessionId },
-    data: { status: SessionStatus.WORKING },
+    data: {
+      status: SessionStatus.WORKING,
+      sessionPaused: false,
+      lastHeartbeat: ts,
+    },
   });
   await closeOpenSegment(sessionId);
-  await ensureOpenSegment(sessionId, SegmentType.ACTIVE);
+  await ensureOpenSegment(sessionId, SegmentType.ACTIVE, ts);
   await aggregateSessionTotals(sessionId);
-  return activeSession(userId);
+  const fresh = await activeSession(userId);
+  return {
+    session: fresh,
+    liveActiveMs: computeLiveActiveMs(fresh),
+  };
 }
 
 export async function logReminder(sessionId, userId, level) {
@@ -430,18 +457,53 @@ async function maybeEnqueueFlagAlerts(userId, endOfPeriod) {
 /** Live billable/active ms including open ACTIVE segment (excludes idle/ghost/break). */
 export function computeLiveActiveMs(session) {
   if (!session) return 0;
-  let ms = session.totalActiveMs || 0;
   const segs = session.segments || [];
-  const open = segs.find((s) => !s.endedAt);
-  if (open?.type === SegmentType.ACTIVE) {
-    ms += msBetween(open.startedAt, now());
+  if (segs.length) {
+    let active = 0;
+    for (const s of segs) {
+      if (s.type !== SegmentType.ACTIVE) continue;
+      const end = s.endedAt || now();
+      active += msBetween(s.startedAt, end);
+    }
+    return Math.round(active);
   }
-  return Math.round(ms);
+  return session.totalActiveMs || 0;
+}
+
+/** Stop billing active time when extension heartbeats stop (browser closed, etc.). */
+export async function autoPauseStaleSession(session) {
+  if (!session?.id || session.clockOut) return session;
+  if (
+    session.status === SessionStatus.GHOST ||
+    session.status === SessionStatus.IDLE ||
+    session.status === SessionStatus.PAUSED_MANUAL ||
+    session.status === SessionStatus.ON_BREAK
+  ) {
+    return session;
+  }
+
+  const org = await prisma.orgSettings.findUnique({ where: { id: 'singleton' } });
+  const timeoutMin = org?.heartbeatTimeoutMin ?? 15;
+  const lastBeat = session.lastHeartbeat ? new Date(session.lastHeartbeat) : new Date(session.clockIn);
+  const pauseAt = new Date(lastBeat.getTime() + timeoutMin * 60_000);
+
+  if (Date.now() <= pauseAt.getTime()) return session;
+
+  await closeOpenSegment(session.id, pauseAt);
+  await prisma.workSession.update({
+    where: { id: session.id },
+    data: { status: SessionStatus.GHOST, sessionPaused: true },
+  });
+  await ensureOpenSegment(session.id, SegmentType.GHOST, pauseAt);
+  await aggregateSessionTotals(session.id);
+  return activeSession(session.userId);
 }
 
 export async function heartbeatSession(userId, sessionId) {
-  const session = await activeSession(userId);
+  let session = await activeSession(userId);
   if (!session || session.id !== sessionId) return { error: 'No active session' };
+
+  session = await autoPauseStaleSession(session);
 
   await aggregateSessionTotals(sessionId);
   const fresh = await activeSession(userId);

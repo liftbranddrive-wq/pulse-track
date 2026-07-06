@@ -40,7 +40,7 @@ Extension + admin both call: `https://api.YOURDOMAIN.com` (your API).
 
 ### Add your Droplet IP to “Network Access” (you will come back AFTER Droplet exists)
 
-**Why:** The database refuses connections from random computers. Only **allowed IPs** or **trusted resources** connect.
+**Why:** The database refuses connections from random computers. Only **allowed IPs** or **trusted resoures** connect.
 
 For now: **skip** finishing this until **Part 5** gives you your **Droplet IP**. Later you’ll open this same database → tab **Network Access** → **Add trusted source** → your **Droplet** or Droplet **public IPv4**.
 

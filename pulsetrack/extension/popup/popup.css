@@ -293,6 +293,16 @@ body.wrap {
   color: var(--muted);
 }
 
+.session-times {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.points-list .point-item.pos { color: #047857; }
+.points-list .point-item.neg { color: #b91c1c; }
+
 .mono {
   font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 }
@@ -404,14 +414,41 @@ body.wrap {
 
 .early-panel {
   margin: 0 12px 10px;
-  padding: 12px;
+  padding: 12px 14px;
   border-radius: 12px;
-  background: rgba(14, 116, 144, 0.15);
-  border: 1px solid rgba(14, 116, 144, 0.25);
+  background: linear-gradient(135deg, rgba(201, 162, 39, 0.14), rgba(14, 116, 144, 0.12));
+  border: 1px solid rgba(201, 162, 39, 0.4);
 }
 
 .early-panel .sum-title {
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  color: var(--gold);
+}
+
+.early-note-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  opacity: 0.92;
+}
+
+.schedule-info {
+  margin: 0 12px 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.btn-gold {
+  margin-top: 10px;
+  background: linear-gradient(180deg, #d4af37, #b8941f);
+  color: #2a1f14;
+  font-weight: 700;
+  border: none;
+}
+
+.btn-gold:hover {
+  filter: brightness(1.06);
 }
 
 .progress-wrap {
@@ -526,6 +563,10 @@ body.wrap {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+.modal-actions.stack {
+  flex-direction: column;
 }
 
 .modal-actions .btn {
@@ -703,4 +744,99 @@ body.wrap {
   font-size: 12px;
   color: var(--cream-muted);
   line-height: 1.6;
+}
+
+.live-clock-panel {
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.live-clock-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.live-clock-time {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--gold-light);
+  margin-top: 4px;
+}
+
+.live-clock-date {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.live-clock-compare {
+  font-size: 11px;
+  color: var(--cream-muted);
+  margin-top: 8px;
+  line-height: 1.45;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.live-clock-compare.late {
+  color: #fca5a5;
+}
+
+.live-clock-compare.early {
+  color: var(--gold-light);
+}
+
+.help-panel {
+  margin-top: 10px;
+}
+
+.help-summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold-light);
+  list-style: none;
+}
+
+.help-summary::-webkit-details-marker {
+  display: none;
+}
+
+.help-body {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.help-body p {
+  margin: 0 0 8px;
+}
+
+.help-body strong {
+  color: var(--cream);
+}
+
+.help-terms {
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.help-terms dt {
+  font-weight: 700;
+  color: var(--cream-muted);
+  margin-top: 6px;
+}
+
+.help-terms dd {
+  margin: 2px 0 0;
+  padding: 0;
+}
+
+.work-date-label {
+  font-weight: 600;
+  color: var(--gold, #c9a227);
 }

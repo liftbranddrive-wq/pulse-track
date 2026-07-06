@@ -9,6 +9,7 @@ import {
   formatScheduleAnnouncement,
   getScheduleForUser,
 } from '../services/attendanceService.js';
+import { getLateClockInLog } from '../services/lateStartService.js';
 import { getMemberMonthlyReport } from '../services/memberReportService.js';
 import { prisma } from '../db.js';
 
@@ -70,6 +71,12 @@ router.get('/report', authMiddleware('ADMIN'), async (req, res) => {
   return res.json(report);
 });
 
+router.get('/late-log', authMiddleware('ADMIN'), async (req, res) => {
+  const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
+  const rows = await getLateClockInLog({ days });
+  return res.json(rows);
+});
+
 router.patch('/:id/correct', authMiddleware('ADMIN'), async (req, res) => {
   const Schema = z.object({
     reason: z.string().min(5),
@@ -93,23 +100,44 @@ router.post('/schedule/set', authMiddleware('ADMIN'), async (req, res) => {
   const Schema = z.object({
     expectedWindowStartMin: z.number().int().min(0).max(1439).optional(),
     expectedWindowEndMin: z.number().int().min(0).max(1439).optional(),
-    requiredHoursMin: z.number().int().min(60).max(720).optional(),
-    graceMinutes: z.number().int().min(0).max(60).optional(),
-    clockInWindowBeforeMin: z.number().int().min(0).max(120).optional(),
-    clockInWindowAfterMin: z.number().int().min(0).max(240).optional(),
-    maxEarlyStartMin: z.number().int().min(30).max(480).optional(),
+    requiredHoursMin: z.number().int().min(60).max(1440).optional(),
+    graceMinutes: z.number().int().min(0).max(120).optional(),
+    clockInWindowBeforeMin: z.number().int().min(0).max(720).optional(),
+    clockInWindowAfterMin: z.number().int().min(0).max(720).optional(),
+    maxEarlyStartMin: z.number().int().min(0).max(720).optional(),
     activityChallengeEnabled: z.boolean().optional(),
     activityChallengeIntervalMin: z.number().int().min(15).max(120).optional(),
     heartbeatTimeoutMin: z.number().int().min(5).max(60).optional(),
+    timezone: z.string().min(1).optional(),
     effectiveFrom: z.string().optional(),
   });
-  const data = Schema.parse(req.body);
+
+  let data;
+  try {
+    data = Schema.parse(req.body);
+  } catch (e) {
+    const msg = e?.issues?.[0]?.message || e.message || 'Invalid schedule';
+    return res.status(400).json({ error: `Schedule validation failed: ${msg}` });
+  }
+
   const { effectiveFrom, ...orgFields } = data;
 
-  const org = await prisma.orgSettings.update({
-    where: { id: 'singleton' },
-    data: orgFields,
-  });
+  if (orgFields.clockInWindowBeforeMin != null && orgFields.expectedWindowStartMin != null) {
+    const normalOpens = orgFields.expectedWindowStartMin - orgFields.clockInWindowBeforeMin;
+    if (normalOpens < 0) {
+      return res.status(400).json({ error: 'Normal window opens cannot be before midnight.' });
+    }
+  }
+
+  let org;
+  try {
+    org = await prisma.orgSettings.update({
+      where: { id: 'singleton' },
+      data: orgFields,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || 'Could not save schedule' });
+  }
 
   await prisma.auditLog.create({
     data: {

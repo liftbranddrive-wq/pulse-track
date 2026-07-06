@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import TermsGlossary from '../components/TermsGlossary';
 
 export default function Flags() {
   const [rows, setRows] = useState(null);
@@ -33,9 +34,29 @@ export default function Flags() {
           <span aria-hidden="true">⚠️</span> Flags & gentle signals
         </h1>
         <p className="text-sm text-muted mt-1 leading-relaxed max-w-3xl">
-          Automated heuristics only — pair every flag with empathy. Acknowledgments stay in the immutable audit trail.
+          A <strong className="text-ink">flag</strong> is an automatic heads-up for managers — not a guilty verdict.
+          Examples: new IP on clock-in, high ghost %, or repeated late arrivals. Talk to the person before assuming a problem.
         </p>
       </div>
+
+      <TermsGlossary
+        title="What is a flag?"
+        terms={[
+          {
+            term: 'Flag',
+            definition:
+              'Software noticed something unusual worth a quick human check. Dismissing a flag means “I reviewed this” — it stays in the audit log.',
+          },
+          {
+            term: 'Not the same as ghost',
+            definition: 'Ghost = idle time while clocked in. Flag = broader anomaly alert that may reference ghost, IP, schedule, etc.',
+          },
+          {
+            term: 'What to do',
+            definition: 'Read the summary, add a short manager note, acknowledge & archive. Use Member profile for full context.',
+          },
+        ]}
+      />
       <ul className="space-y-3">
         {rows.map((f) => (
           <li

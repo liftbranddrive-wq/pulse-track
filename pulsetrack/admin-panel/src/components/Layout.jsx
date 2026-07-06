@@ -24,6 +24,8 @@ import {
   Sun,
   Moon,
   Sunrise,
+  AlarmClock,
+  MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -140,6 +142,7 @@ export default function Layout() {
               label="Early start"
               badgeTone="amber"
             />
+            <NavItem to="/late-log" icon={AlarmClock} label="Late log" badgeTone="amber" />
             <NavItem to="/schedule" icon={Timer} label="Schedule" />
             <NavItem to="/points" icon={Trophy} label="Points" />
             <NavItem
@@ -172,6 +175,7 @@ export default function Layout() {
           <SectionLabel>Reports</SectionLabel>
           <div className="space-y-0.5">
             <NavItem to="/reports" icon={FileSpreadsheet} label="Reports" />
+            <NavItem to="/weekly-accountability" icon={MessageSquare} label="Weekly accountability" />
             <NavItem to="/email-logs" icon={Mail} label="Email Logs" />
             <NavItem to="/audit" icon={ClipboardList} label="Audit log" />
           </div>

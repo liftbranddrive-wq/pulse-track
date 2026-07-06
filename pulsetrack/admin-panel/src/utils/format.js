@@ -29,3 +29,37 @@ export function formatDuration(ms) {
   if (h <= 0) return `${r}m`;
   return `${h}h ${r.toString().padStart(2, '0')}m`;
 }
+
+/** Decimal hours → "4h 23m" */
+export function formatWorkedHours(hours) {
+  if (hours == null || Number.isNaN(Number(hours)) || hours <= 0) return '0m';
+  const totalMin = Math.round(Number(hours) * 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h <= 0) return `${m}m`;
+  if (m <= 0) return `${h}h`;
+  return `${h}h ${m.toString().padStart(2, '0')}m`;
+}
+
+const PK_TZ = 'Asia/Karachi';
+
+export function formatPkTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleTimeString('en-US', {
+    timeZone: PK_TZ,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+export function formatPkDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', {
+    timeZone: PK_TZ,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}

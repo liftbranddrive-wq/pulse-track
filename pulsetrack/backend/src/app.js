@@ -25,6 +25,8 @@ export function createApp() {
 
   const allowed = [
     config.adminPanelOrigin,
+    'https://admin.liftbrandfulfillment.com',
+    'http://localhost:5173',
     ...(config.extensionOrigin ? [config.extensionOrigin] : []),
     ...config.allowedOrigins,
   ].filter(Boolean);

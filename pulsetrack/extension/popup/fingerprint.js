@@ -9,7 +9,6 @@ export async function getDeviceFingerprint() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const platform = navigator.platform;
   const lang = navigator.language;
-  const extId = chrome.runtime?.id ?? 'unknown';
 
   let canvasHash = 'na';
   try {
@@ -29,8 +28,8 @@ export async function getDeviceFingerprint() {
     canvasHash = 'blocked';
   }
 
-  const raw = [ua, screenRes, tz, platform, lang, extId, canvasHash].join('|');
-  const fp = `pt_${hashCode(raw)}_${Date.now().toString(36)}`;
+  const raw = [ua, screenRes, tz, platform, lang, canvasHash].join('|');
+  const fp = `pt_${hashCode(raw)}`;
 
   await chrome.storage.local.set({ pulsetrack_device_fp: fp });
   return fp;

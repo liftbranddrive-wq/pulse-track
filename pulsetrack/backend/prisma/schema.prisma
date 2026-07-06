@@ -81,6 +81,7 @@ enum LeaveStatus {
   PENDING
   APPROVED
   REJECTED
+  CANCELLED
 }
 
 enum AnomalyType {
@@ -392,6 +393,7 @@ model AttendanceRecord {
   isComplete          Boolean           @default(false)
   lateNote            String?
   overtimeHours       Float             @default(0)
+  autoClockOut        Boolean           @default(false)
   ipAddress           String?
   clockOutIp          String?
   deviceFingerprint   String?
@@ -401,6 +403,7 @@ model AttendanceRecord {
   earlyNote           String?
   earlyMinutes        Int               @default(0)
   earlyStartRequestId String?
+  workShiftLabel      String?           // FULL_DAY | PART_TIME | NIGHT_SHIFT
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 

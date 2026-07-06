@@ -28,27 +28,39 @@ export async function validateDevice(user, fingerprint) {
   if (!fingerprint) return { ok: true };
 
   const authorized = Array.isArray(user.authorizedDevices) ? user.authorizedDevices : [];
-
-  if (!user.deviceFingerprint && authorized.length === 0) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        deviceFingerprint: fingerprint,
-        authorizedDevices: [fingerprint],
-      },
-    });
-    return { ok: true, firstDevice: true };
-  }
-
   const known =
     fingerprint === user.deviceFingerprint || authorized.includes(fingerprint);
 
-  if (!known) {
-    await logAnomaly(user.id, AnomalyType.NEW_DEVICE, { fingerprint }, { deviceFingerprint: fingerprint });
-    return { ok: false, error: 'Unknown device — contact admin for authorization', flagged: true };
+  if (known) return { ok: true };
+
+  // New PC, Mac, or extension reinstall — register automatically (log for admin, do not block).
+  const devices = authorized.includes(fingerprint) ? authorized : [...authorized, fingerprint];
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      deviceFingerprint: user.deviceFingerprint || fingerprint,
+      authorizedDevices: devices,
+    },
+  });
+
+  if (user.deviceFingerprint && user.deviceFingerprint !== fingerprint) {
+    await logAnomaly(
+      user.id,
+      AnomalyType.NEW_DEVICE,
+      { fingerprint, autoAuthorized: true },
+      { deviceFingerprint: fingerprint },
+    ).catch(() => {});
   }
 
-  return { ok: true };
+  return { ok: true, registered: true };
+}
+
+/** Call on login so clock-in never fails on a device the member just signed in from. */
+export async function registerDeviceForUser(userId, fingerprint) {
+  if (!fingerprint || !userId) return;
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return;
+  await validateDevice(user, fingerprint);
 }
 
 export async function logIpOnClockIn(user, ip, dayStart) {

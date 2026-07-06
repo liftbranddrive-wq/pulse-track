@@ -15,6 +15,7 @@ import {
   heartbeatSession,
   aggregateSessionTotals,
   computeLiveActiveMs,
+  autoPauseStaleSession,
   BreakType,
 } from '../services/sessionService.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -33,85 +34,120 @@ const router = Router();
 router.use(authMiddleware());
 
 router.get('/today', async (req, res) => {
-  const summary = await getTodaySummary(req.user.id);
-  return res.json(summary);
+  try {
+    const summary = await getTodaySummary(req.user.id);
+    return res.json(summary);
+  } catch (e) {
+    console.error('today failed', e);
+    return res.status(500).json({ error: 'Could not load today summary.' });
+  }
 });
 
 router.get('/active', async (req, res) => {
-  const session = await activeSession(req.user.id);
-  if (session?.id) await aggregateSessionTotals(session.id).catch(() => {});
-  const fresh = session?.id ? await activeSession(req.user.id) : session;
-  return res.json({
-    session: fresh,
-    liveActiveMs: computeLiveActiveMs(fresh),
-  });
+  try {
+    let session = await activeSession(req.user.id);
+    if (session?.id) {
+      session = await autoPauseStaleSession(session);
+      await aggregateSessionTotals(session.id).catch(() => {});
+    }
+    const fresh = session?.id ? await activeSession(req.user.id) : session;
+    return res.json({
+      session: fresh,
+      liveActiveMs: computeLiveActiveMs(fresh),
+    });
+  } catch (e) {
+    console.error('active failed', e);
+    return res.status(500).json({ error: 'Could not load active session.' });
+  }
 });
 
 router.post('/heartbeat', async (req, res) => {
-  const Schema = z.object({ sessionId: z.string() });
-  const { sessionId } = Schema.parse(req.body);
-  await recordHeartbeat(req.user.id, sessionId).catch(() => {});
-  const result = await heartbeatSession(req.user.id, sessionId);
-  if (result?.error) return res.status(400).json(result);
-  return res.json(result);
+  try {
+    const Schema = z.object({ sessionId: z.string() });
+    const { sessionId } = Schema.parse(req.body);
+    await recordHeartbeat(req.user.id, sessionId).catch(() => {});
+    const result = await heartbeatSession(req.user.id, sessionId);
+    if (result?.error) return res.status(400).json(result);
+    return res.json(result);
+  } catch (e) {
+    console.error('heartbeat failed', e);
+    return res.status(500).json({ error: 'Heartbeat failed.' });
+  }
 });
 
 router.get('/clock-status', async (req, res) => {
-  const status = await getClockInStatus(req.user.id);
-  return res.json(status);
+  try {
+    const status = await getClockInStatus(req.user.id);
+    return res.json(status);
+  } catch (e) {
+    console.error('clock-status failed', e);
+    return res.status(500).json({ error: 'Could not load status — please try again.' });
+  }
 });
 
 router.post('/clock-in', async (req, res) => {
-  const Schema = z.object({
-    lateNote: z.string().optional(),
-    earlyNote: z.string().optional(),
-    deviceFingerprint: z.string().optional(),
-  });
-  const body = Schema.parse(req.body ?? {});
-  const ip = clientIp(req);
+  try {
+    const Schema = z.object({
+      lateNote: z.string().optional(),
+      earlyNote: z.string().optional(),
+      deviceFingerprint: z.string().optional(),
+      dayChoice: z.enum(['PREVIOUS_DAY', 'TODAY']).optional(),
+    });
+    const body = Schema.parse(req.body ?? {});
+    const ip = clientIp(req);
 
-  const validation = await validateClockIn(req.user.id, {
-    lateNote: body.lateNote,
-    earlyNote: body.earlyNote,
-    deviceFingerprint: body.deviceFingerprint,
-    ipAddress: ip,
-  });
-  if (validation.error) return res.status(400).json(validation);
+    const validation = await validateClockIn(req.user.id, {
+      lateNote: body.lateNote,
+      earlyNote: body.earlyNote,
+      deviceFingerprint: body.deviceFingerprint,
+      ipAddress: ip,
+      dayChoice: body.dayChoice,
+    });
+    if (validation.error) return res.status(400).json(validation);
 
-  const result = await processClockIn(req.user.id, validation);
-  req.app.locals.io?.broadcastTeam?.().catch?.(() => {});
-  req.app.locals.io?.emitActivity?.({
-    type: 'clock_in',
-    userId: req.user.id,
-    isLate: result.isLate,
-    lateMinutes: result.lateMinutes,
-    isEarlyStart: result.isEarlyStart,
-  }).catch?.(() => {});
-  return res.json({
-    ...result.session,
-    attendance: result.record,
-    isLate: result.isLate,
-    isEarlyStart: result.isEarlyStart,
-    expectedClockOutBy: result.expectedClockOutBy,
-    requiredHours: result.requiredHours,
-  });
+    const result = await processClockIn(req.user.id, validation);
+    req.app.locals.io?.broadcastTeam?.().catch?.(() => {});
+    req.app.locals.io?.emitActivity?.({
+      type: 'clock_in',
+      userId: req.user.id,
+      isLate: result.isLate,
+      lateMinutes: result.lateMinutes,
+      isEarlyStart: result.isEarlyStart,
+    }).catch?.(() => {});
+    return res.json({
+      ...result.session,
+      attendance: result.record,
+      isLate: result.isLate,
+      isEarlyStart: result.isEarlyStart,
+      expectedClockOutBy: result.expectedClockOutBy,
+      requiredHours: result.requiredHours,
+    });
+  } catch (e) {
+    console.error('clock-in failed', e);
+    return res.status(500).json({ error: 'Clock-in failed — please try again in a moment.' });
+  }
 });
 
 router.post('/clock-out', async (req, res) => {
-  const Schema = z.object({ sessionId: z.string() });
-  const { sessionId } = Schema.parse(req.body);
-  const ip = clientIp(req);
+  try {
+    const Schema = z.object({ sessionId: z.string() });
+    const { sessionId } = Schema.parse(req.body);
+    const ip = clientIp(req);
 
-  const attResult = await processClockOut(req.user.id, sessionId, { ipAddress: ip });
-  if (attResult.error) return res.status(400).json(attResult);
+    const attResult = await processClockOut(req.user.id, sessionId, { ipAddress: ip });
+    if (attResult.error) return res.status(400).json(attResult);
 
-  req.app.locals.io?.broadcastTeam?.().catch?.(() => {});
-  req.app.locals.io?.emitActivity?.({
-    type: 'clock_out',
-    userId: req.user.id,
-    summary: attResult.summary,
-  }).catch?.(() => {});
-  return res.json({ ...attResult.session, summary: attResult.summary });
+    req.app.locals.io?.broadcastTeam?.().catch?.(() => {});
+    req.app.locals.io?.emitActivity?.({
+      type: 'clock_out',
+      userId: req.user.id,
+      summary: attResult.summary,
+    }).catch?.(() => {});
+    return res.json({ ...attResult.session, summary: attResult.summary });
+  } catch (e) {
+    console.error('clock-out failed', e);
+    return res.status(500).json({ error: 'Clock-out failed — please try again in a moment.' });
+  }
 });
 
 router.post('/break/start', async (req, res) => {

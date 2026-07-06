@@ -315,7 +315,12 @@ router.get('/org', async (_req, res) => {
   let org = await prisma.orgSettings.findUnique({ where: { id: 'singleton' } });
   if (!org) {
     org = await prisma.orgSettings.create({
-      data: { id: 'singleton', companyName: 'PulseTrack Team' },
+      data: { id: 'singleton', companyName: 'PulseTrack Team', timezone: 'Asia/Karachi' },
+    });
+  } else if (!org.timezone || org.timezone === 'UTC') {
+    org = await prisma.orgSettings.update({
+      where: { id: 'singleton' },
+      data: { timezone: 'Asia/Karachi' },
     });
   }
   res.json(org);
@@ -436,6 +441,23 @@ router.get('/reports/focus-board', async (req, res) => {
 
   rows.sort((a, b) => b.activityScore - a.activityScore);
   res.json(rows);
+});
+
+router.get('/weekly-accountability/weeks', async (_req, res) => {
+  const { listAvailableWeeks } = await import('../services/weeklyAccountabilityService.js');
+  const data = await listAvailableWeeks(20);
+  res.json(data);
+});
+
+router.get('/weekly-accountability', async (req, res) => {
+  const weekStart = req.query.weekStart ? String(req.query.weekStart) : undefined;
+  const { generateWeeklyAccountability } = await import('../services/weeklyAccountabilityService.js');
+  try {
+    const data = await generateWeeklyAccountability(weekStart);
+    res.json(data);
+  } catch (e) {
+    res.status(400).json({ error: e?.message ?? 'Could not generate report' });
+  }
 });
 
 router.get('/reports/reminders', async (req, res) => {

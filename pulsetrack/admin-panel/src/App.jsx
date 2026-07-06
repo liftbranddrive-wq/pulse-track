@@ -21,6 +21,8 @@ import Schedule from './pages/Schedule.jsx';
 import Points from './pages/Points.jsx';
 import SecurityLog from './pages/SecurityLog.jsx';
 import EarlyStart from './pages/EarlyStart.jsx';
+import LateLog from './pages/LateLog.jsx';
+import WeeklyAccountability from './pages/WeeklyAccountability.jsx';
 import NotificationsPage from './pages/NotificationsPage.jsx';
 
 function Guard({ children }) {
@@ -56,6 +58,7 @@ export default function App() {
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/leave" element={<LeaveManagement />} />
         <Route path="/early-start" element={<EarlyStart />} />
+        <Route path="/late-log" element={<LateLog />} />
         <Route path="/schedule" element={<Schedule />} />
         <Route path="/points" element={<Points />} />
         <Route path="/security" element={<SecurityLog />} />
@@ -64,6 +67,7 @@ export default function App() {
         <Route path="/ghost-time" element={<GhostTime />} />
         <Route path="/flags" element={<Flags />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/weekly-accountability" element={<WeeklyAccountability />} />
         <Route path="/email-logs" element={<EmailLogs />} />
         <Route path="/audit" element={<Audit />} />
         <Route path="/settings" element={<Settings />} />

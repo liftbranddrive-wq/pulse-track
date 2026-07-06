@@ -1,12 +1,23 @@
 import { prisma } from '../db.js';
-import { minutesFromMidnightUTC } from '../utils/time.js';
+import { minutesFromMidnightInTimezone } from '../utils/time.js';
 
-export function formatMinutesAsTime(mins) {
+export function formatMinutesAsTime(mins, timezone = 'UTC') {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   const ampm = h >= 12 ? 'PM' : 'AM';
   const h12 = h % 12 || 12;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm} UTC`;
+  const label = `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  return timezone && timezone !== 'UTC' ? `${label} (${timezone})` : `${label} UTC`;
+}
+
+function minsNow(now, schedule) {
+  return minutesFromMidnightInTimezone(now, schedule.timezone ?? 'UTC');
+}
+
+/** Midnight–6 AM local — night / after-midnight shift start. */
+export function isNightShiftWindow(now, schedule) {
+  const mins = minsNow(now, schedule);
+  return mins >= 0 && mins < 360;
 }
 
 /** Full allowed clock-in range including early (note required before normal window). */
@@ -23,20 +34,23 @@ export function getFullClockWindow(schedule) {
 }
 
 export function isWithinFullWindow(now, schedule) {
-  const mins = minutesFromMidnightUTC(now);
+  const mins = minsNow(now, schedule);
   const { absoluteEarliest, latest } = getFullClockWindow(schedule);
+  if (isNightShiftWindow(now, schedule)) return true;
   return mins >= absoluteEarliest && mins <= latest;
 }
 
 /** Before normal window but inside max-early range — note required, no approval. */
 export function needsEarlyNote(now, schedule) {
-  const mins = minutesFromMidnightUTC(now);
+  const mins = minsNow(now, schedule);
+  if (isNightShiftWindow(now, schedule)) return true;
+  if (mins >= schedule.clockInMin) return false;
   const { normalEarliest, absoluteEarliest } = getFullClockWindow(schedule);
   return mins >= absoluteEarliest && mins < normalEarliest;
 }
 
 export function computeEarlyMinutes(now, schedule) {
-  const mins = minutesFromMidnightUTC(now);
+  const mins = minsNow(now, schedule);
   const scheduled = schedule.clockInMin;
   if (mins >= scheduled) return 0;
   const { normalEarliest } = getFullClockWindow(schedule);

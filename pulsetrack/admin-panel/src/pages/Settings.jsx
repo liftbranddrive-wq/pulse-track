@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import TermsGlossary from '../components/TermsGlossary';
 
 export default function Settings() {
   const [org, setOrg] = useState(null);
@@ -69,12 +70,44 @@ export default function Settings() {
         <Field label="Company name" name="companyName" defaultValue={org.companyName} />
 
         <div className="grid grid-cols-3 gap-3">
-          <Field label="L1 min" name="l1" defaultValue={org.globalL1Min ?? 5} type="number" />
-          <Field label="L2 min" name="l2" defaultValue={org.globalL2Min ?? 10} type="number" />
-          <Field label="L3 min (ghost)" name="l3" defaultValue={org.globalL3Min ?? 20} type="number" />
+          <Field
+            label="Reminder 1 (minutes idle)"
+            name="l1"
+            defaultValue={org.globalL1Min ?? 5}
+            type="number"
+            hint="First nudge — “still working?”"
+          />
+          <Field
+            label="Reminder 2 (idle)"
+            name="l2"
+            defaultValue={org.globalL2Min ?? 10}
+            type="number"
+            hint="Second warning before timer pauses"
+          />
+          <Field
+            label="Ghost after (idle)"
+            name="l3"
+            defaultValue={org.globalL3Min ?? 15}
+            type="number"
+            hint="Active time pauses; ghost minutes logged"
+          />
         </div>
 
-        <Field label="Timezone (IANA placeholder)" name="timezone" defaultValue={org.timezone ?? 'UTC'} />
+        <label className="block">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Timezone</span>
+          <select
+            name="timezone"
+            defaultValue={org.timezone ?? 'Asia/Islamabad'}
+            className="mt-1.5 w-full rounded-xl border border-line bg-page px-3 py-2.5 text-[13px]"
+          >
+            <option value="Asia/Islamabad">Pakistan — Islamabad / Lahore / Karachi (UTC+5)</option>
+            <option value="Asia/Karachi">Pakistan — Karachi label (same UTC+5)</option>
+            <option value="UTC">UTC</option>
+          </select>
+          <span className="text-[11px] text-muted mt-1 block">
+            Schedule page clock times use this timezone. Islamabad and Karachi are the same offset in Pakistan.
+          </span>
+        </label>
 
         <label className="flex gap-3 text-muted items-start">
           <input type="checkbox" name="allowMemberTimeEdits" defaultChecked={org.allowMemberTimeEdits} className="mt-1 rounded border-line text-brand focus:ring-brand" />
@@ -134,6 +167,8 @@ export default function Settings() {
         </div>
       </form>
 
+      <TermsGlossary title="Policy terms explained" />
+
       <div className="rounded-xl2 border border-line bg-surface shadow-soft p-6 space-y-3">
         <h2 className="text-ink font-bold">Email smoke test</h2>
         <p className="text-[12px] text-muted leading-relaxed">
@@ -159,7 +194,7 @@ export default function Settings() {
   );
 }
 
-function Field({ label, name, defaultValue, type = 'text' }) {
+function Field({ label, name, defaultValue, type = 'text', hint }) {
   return (
     <label className="block">
       <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</span>
@@ -169,6 +204,7 @@ function Field({ label, name, defaultValue, type = 'text' }) {
         defaultValue={defaultValue}
         className="mt-1.5 w-full rounded-xl border border-line bg-page px-3 py-2.5 text-[13px]"
       />
+      {hint ? <span className="text-[11px] text-muted mt-1 block">{hint}</span> : null}
     </label>
   );
 }

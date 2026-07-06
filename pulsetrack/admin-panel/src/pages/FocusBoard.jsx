@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { TableSkeleton } from '../components/Skeleton';
+import TermsGlossary from '../components/TermsGlossary';
 
 export default function FocusBoard() {
   const [rows, setRows] = useState(null);
@@ -19,7 +20,14 @@ export default function FocusBoard() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-4">
-        <h1 className="text-2xl font-bold text-ink tracking-tight">Focus Board</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-ink tracking-tight">Focus Board</h1>
+          <p className="text-sm text-muted mt-1 max-w-2xl">
+            Live summary per member: <strong className="text-ink">Clocked</strong> = session length ·{' '}
+            <strong className="text-ink">Active</strong> = counted work · <strong className="text-ink">Ghost</strong> = idle while in ·{' '}
+            <strong className="text-ink">Score</strong> = active ÷ clocked · <strong className="text-ink">Flags</strong> = open alerts
+          </p>
+        </div>
         <select
           value={range}
           onChange={(e) => setRange(e.target.value)}
@@ -29,6 +37,7 @@ export default function FocusBoard() {
           <option value="week">This week</option>
         </select>
       </div>
+      <TermsGlossary title="Column definitions" />
       <div className="overflow-auto rounded-xl2 border border-line bg-surface shadow-soft">
         <table className="min-w-full text-[13px]">
           <thead className="bg-page/70 text-muted text-left border-b border-line font-semibold">

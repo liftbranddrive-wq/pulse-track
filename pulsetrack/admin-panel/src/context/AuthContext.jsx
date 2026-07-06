@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import { api } from '../lib/api';
 
-const TTL_MS = 20 * 60 * 1000;
+const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days idle (refresh token lifetime)
 
 const AuthContext = createContext(null);
 
@@ -70,15 +70,39 @@ export function AuthProvider({ children }) {
       endpoint: '/api/auth/login/admin',
       method: 'POST',
       skipAuth: true,
-      body: { email, password },
+      body: { email: email.trim(), password },
     });
+
+    if (data.user?.role && data.user.role !== 'ADMIN') {
+      throw new Error(
+        `This account is ${data.user.role}, not ADMIN. In Members, click "Make admin" for this email.`,
+      );
+    }
 
     localStorage.setItem('pulsetrack_admin_access', data.accessToken);
     localStorage.setItem('pulsetrack_admin_refresh', data.refreshToken);
-    const me = await api({ endpoint: '/api/auth/me' });
-    setUser(me);
-    resetIdle();
-    return me;
+    localStorage.setItem('pulsetrack_admin_email', email.trim().toLowerCase());
+
+    if (data.user?.role === 'ADMIN') {
+      setUser(data.user);
+      resetIdle();
+    }
+
+    try {
+      const me = await api({ endpoint: '/api/auth/me' });
+      setUser(me);
+      resetIdle();
+      return me;
+    } catch (meErr) {
+      if (data.user?.role === 'ADMIN') {
+        return data.user;
+      }
+      throw new Error(
+        meErr.message?.includes('inactive') || meErr.message?.includes('disabled')
+          ? 'Account is disabled — another admin must click Enable in Members.'
+          : `Login reached server but profile check failed: ${meErr.message}. Check API / CORS on server .env.`,
+      );
+    }
   }, [resetIdle]);
 
   const ctx = useMemo(

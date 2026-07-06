@@ -1,0 +1,53 @@
+Liftbrand PulseTrack — install on Mac or Windows
+================================================
+
+STEP 1 — Unzip the file
+-----------------------
+Mac:
+  1. Double-click extension.zip (or right-click → Open With → Archive Utility)
+  2. You get a folder named "extension"
+  3. Open it — inside you must see: manifest.json, popup/, background/, icons/
+
+Windows:
+  1. Right-click extension.zip → Extract All
+  2. Open the "extension" folder — same files as above
+
+IMPORTANT: Chrome needs the folder that contains manifest.json.
+Do NOT select the .zip file itself. Do NOT select a parent folder that
+only contains another empty folder.
+
+
+STEP 2 — Load in Google Chrome
+------------------------------
+  1. Open Google Chrome (not Safari)
+  2. Address bar: chrome://extensions
+  3. Top-right: turn ON "Developer mode"
+  4. Click "Load unpacked"
+  5. Select the "extension" folder (the one with manifest.json inside)
+  6. Pin the puzzle-piece icon → Liftbrand PulseTrack
+
+
+STEP 3 — Sign in
+----------------
+  Company API:  https://api.liftbrandfulfillment.com
+  Email:        (from your manager — Admin → Members)
+  Password:     (from your manager — or after Reset password)
+
+NOT the admin website URL. NOT your manager's admin login unless they
+gave you that exact email + password.
+
+If you see "Invalid credentials":
+  - Re-type email and password carefully (no extra spaces)
+  - Ask manager to open admin.liftbrandfulfillment.com → Members →
+    find your name → Reset password → share new password with you
+  - Make sure your account shows "Enabled" (not Disabled)
+
+
+STEP 4 — Daily use
+------------------
+  1. Click extension → Sign in (once)
+  2. Work tab → Clock In
+  3. Keep Chrome running (can be minimised)
+  4. Clock Out when finished
+
+Version in manifest.json should be 1.3.2 or newer.

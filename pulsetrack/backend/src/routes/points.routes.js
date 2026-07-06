@@ -7,14 +7,47 @@ import {
   manualAdjust,
   redeemPoints,
   getPointRules,
+  updatePointRules,
+  awardCustomTask,
 } from '../services/pointsEngine.js';
+import { FIXED_RULE_KEYS } from '../utils/time.js';
 import { prisma } from '../db.js';
 
 const router = Router();
 
-router.get('/rules', authMiddleware('ADMIN'), async (_req, res) => {
+router.get('/rules', authMiddleware(), async (req, res) => {
   const rules = await getPointRules();
   return res.json(rules);
+});
+
+router.patch('/rules', authMiddleware('ADMIN'), async (req, res) => {
+  const num = z.number().int();
+  const shape = {};
+  for (const key of FIXED_RULE_KEYS) shape[key] = num.optional();
+  shape.customTasks = z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        name: z.string().min(2),
+        points: z.number().int(),
+        active: z.boolean().optional(),
+      }),
+    )
+    .optional();
+  const payload = z.object(shape).parse(req.body);
+  const rules = await updatePointRules(payload);
+  return res.json(rules);
+});
+
+router.post('/award-task', authMiddleware('ADMIN'), async (req, res) => {
+  const Schema = z.object({
+    userId: z.string(),
+    taskId: z.string(),
+  });
+  const { userId, taskId } = Schema.parse(req.body);
+  const result = await awardCustomTask(userId, taskId, req.user.id);
+  if (result?.error) return res.status(400).json(result);
+  return res.json(result);
 });
 
 router.get('/leaderboard/monthly', authMiddleware('ADMIN'), async (_req, res) => {

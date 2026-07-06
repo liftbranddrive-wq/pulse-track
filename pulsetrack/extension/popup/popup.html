@@ -54,15 +54,29 @@
         <button type="button" id="signOutBtn" class="btn btn-ghost sign-out-btn" title="Sign out">Sign out</button>
       </div>
 
+      <div id="liveClockPanel" class="live-clock-panel card-sub hidden">
+        <div class="live-clock-label">Now (team timezone)</div>
+        <div class="live-clock-time mono" id="liveClockTime">—</div>
+        <div class="live-clock-date" id="liveClockDate">—</div>
+        <div class="live-clock-compare" id="liveClockCompare"></div>
+      </div>
+
       <div id="scheduleHint" class="schedule-hint hidden"></div>
 
+      <div id="scheduleInfoPanel" class="schedule-info hidden">
+        <div class="sum-title">Today's clock-in times</div>
+        <p id="scheduleInfoText" class="hint hint-small"></p>
+      </div>
+
       <div id="earlyStartPanel" class="early-panel hidden">
-        <div class="sum-title">Early start window</div>
+        <div class="sum-title">⏰ Early start — available now</div>
         <p id="earlyStartMsg" class="hint hint-small"></p>
+        <button type="button" id="clockInEarlyBtn" class="btn btn-gold block">Start early — add reason note</button>
+        <p class="hint hint-small early-note-hint">Your note goes to admin · Timer starts immediately · You must still complete full hours today</p>
       </div>
 
       <div class="timer-card">
-        <div class="timer-label">Active work time</div>
+        <div class="timer-label">Active work time · <span id="workDateLabel" class="work-date-label">Today</span></div>
         <div class="timer mono" id="timer">00:00:00</div>
         <div class="progress-wrap hidden" id="progressWrap">
           <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
@@ -70,6 +84,7 @@
         </div>
         <div class="hours-due hidden" id="hoursDueHint"></div>
         <div class="timer-hint" id="timerHint">Clock in to start tracking</div>
+        <div class="session-times hidden" id="sessionTimes"></div>
       </div>
 
       <div class="actions">
@@ -97,6 +112,22 @@
         <div id="todaySummary" class="sum-grid">Loading…</div>
         <div class="quote" id="quote"></div>
       </div>
+
+      <details class="help-panel card-sub">
+        <summary class="help-summary">How does tracking work?</summary>
+        <div class="help-body">
+          <p><strong>Whole computer.</strong> After you clock in, we detect keyboard/mouse use <em>anywhere on this PC</em> — other Chrome profiles, Firefox, Edge, Excel, Slack, etc. We do <em>not</em> read what you type or which apps you use.</p>
+          <p><strong>Keep Chrome open.</strong> PulseTrack must stay installed in one Chrome profile and Chrome should be running (can be minimised). Clock in from that profile once per day.</p>
+          <p><strong>Idle reminders:</strong> ~5 min no input on the PC → nudge. ~10 min → warning. ~15 min → <strong>ghost</strong>: active timer pauses until <strong>Resume focus</strong>.</p>
+          <p><strong>YouTube / video:</strong> Watching without moving mouse or keyboard for 15+ minutes will pause active time (ghost). Scroll or tap a key occasionally if you are still working.</p>
+          <p><strong>Break / Pause:</strong> Use official buttons when you step away — do not rely on ghost for lunch.</p>
+          <dl class="help-terms">
+            <dt>Active</dt><dd>Time that counts toward your required hours.</dd>
+            <dt>Ghost</dt><dd>Clocked in but no computer activity 15+ min — not counted as active until you resume.</dd>
+            <dt>Idle</dt><dd>Between reminders and ghost — timer may still run.</dd>
+          </dl>
+        </div>
+      </details>
       </div>
 
       <div id="tabLeave" class="tab-panel hidden">
@@ -134,6 +165,10 @@
           <div class="streak" id="streakLabel">🔥 0-day streak</div>
         </div>
         <div class="card-sub">
+          <div class="sum-title">How to earn points</div>
+          <div id="pointsRules" class="points-list">Loading rules…</div>
+        </div>
+        <div class="card-sub">
           <div class="sum-title">Recent earnings</div>
           <div id="pointsHistory" class="points-list">Loading…</div>
         </div>
@@ -160,6 +195,18 @@
           </div>
           <div id="calGrid" class="cal-grid cal-days"></div>
           <div id="calStats" class="cal-stats">Loading…</div>
+        </div>
+      </div>
+
+      <div id="shiftModal" class="modal hidden">
+        <div class="modal-card">
+          <h3>After-midnight clock-in</h3>
+          <p class="hint" id="shiftModalMsg">Which day should this work count for?</p>
+          <div class="modal-actions stack">
+            <button type="button" id="shiftPrevDayBtn" class="btn btn-primary block">Previous day</button>
+            <button type="button" id="shiftNewDayBtn" class="btn btn-warn block">New day</button>
+            <button type="button" id="shiftCancelBtn" class="btn btn-ghost block">Cancel</button>
+          </div>
         </div>
       </div>
 

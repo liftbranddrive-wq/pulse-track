@@ -2,6 +2,7 @@
 
 const ALARM = 'pulsetrack-inactivity';
 const HEARTBEAT_ALARM = 'pulsetrack-heartbeat';
+const TOKEN_REFRESH_ALARM = 'pulsetrack-token-refresh';
 
 const LS = {
   access: 'pulsetrack_access',
@@ -18,11 +19,16 @@ const LS = {
   l3Min: 'pulsetrack_l3_min',
   clockStarted: 'pulsetrack_clock_in_started_at',
   liveActiveMs: 'pulsetrack_live_active_ms',
+  liveAnchorAt: 'pulsetrack_live_anchor_at',
   sessionStatus: 'pulsetrack_session_status',
+  clockInAt: 'pulsetrack_clock_in_at',
 };
 
 /** L1 nudge → L2 idle segment → L3 ghost (stops active billing). */
 const DEFAULT_THRESHOLDS = { l1: 5, l2: 10, l3: 15 };
+
+/** OS idle threshold (seconds). Chrome minimum is 15 — detects keyboard/mouse anywhere on the PC. */
+const SYSTEM_IDLE_SEC = 15;
 
 async function get(key) {
   const o = await chrome.storage.local.get(key);
@@ -42,11 +48,35 @@ async function ensureThresholds() {
   if (Object.keys(patch).length) await put(patch);
 }
 
-async function bumpActivityFromBridge() {
-  const sessionId = await get(LS.sessionId);
+function querySystemIdleState() {
+  if (!chrome.idle?.queryState) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      chrome.idle.queryState(SYSTEM_IDLE_SEC, (state) => resolve(state ?? null));
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+/** Whole-computer activity: any keyboard/mouse on the PC (all Chrome profiles, apps, browsers). */
+async function syncSystemActivity() {
+  const state = await querySystemIdleState();
+  if (state === 'active') await markUserActive();
+}
+
+async function isTrackingFrozen() {
   const paused = await get(LS.paused);
+  if (paused) return true;
   const status = await get(LS.sessionStatus);
-  if (!sessionId || paused) return;
+  return isFrozenStatus(status);
+}
+
+async function markUserActive() {
+  const sessionId = await get(LS.sessionId);
+  if (!sessionId) return;
+
+  const status = await get(LS.sessionStatus);
 
   if (status === 'IDLE' || status === 'GHOST') {
     await syncFromApi('/api/sessions/state/resume-focus', {
@@ -55,12 +85,17 @@ async function bumpActivityFromBridge() {
     });
     await put({
       [LS.sessionStatus]: 'WORKING',
+      [LS.paused]: false,
       [LS.l1Sent]: false,
       [LS.l2Sent]: false,
       [LS.l3Reached]: false,
+      [LS.lastActivity]: Date.now(),
     });
     await runHeartbeat();
+    return;
   }
+
+  if (await isTrackingFrozen()) return;
 
   await put({
     [LS.lastActivity]: Date.now(),
@@ -68,6 +103,10 @@ async function bumpActivityFromBridge() {
     [LS.l2Sent]: false,
     [LS.l3Reached]: false,
   });
+}
+
+async function bumpActivityFromBridge() {
+  await markUserActive();
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -155,10 +194,61 @@ async function persistSessionSnapshot(payload) {
     typeof payload?.liveActiveMs === 'number'
       ? payload.liveActiveMs
       : session.totalActiveMs ?? 0;
-  await put({
+  const patch = {
     [LS.liveActiveMs]: live,
+    [LS.liveAnchorAt]: Date.now(),
     [LS.sessionStatus]: session.status,
-  });
+  };
+  if (session.clockIn) patch[LS.clockInAt] = session.clockIn;
+  await put(patch);
+}
+
+function isFrozenStatus(status) {
+  return status === 'GHOST' || status === 'IDLE' || status === 'PAUSED_MANUAL' || status === 'ON_BREAK';
+}
+
+async function computeDisplayMs() {
+  const sessionId = await get(LS.sessionId);
+  const status = await get(LS.sessionStatus);
+  const clockInAt = await get(LS.clockInAt);
+  const base = Number((await get(LS.liveActiveMs)) || 0);
+  const anchor = Number((await get(LS.liveAnchorAt)) || 0);
+  let ms = base;
+  if (!isFrozenStatus(status) && anchor) ms = base + Math.max(0, Date.now() - anchor);
+  if (clockInAt) {
+    const wallMs = Math.max(0, Date.now() - new Date(clockInAt).getTime());
+    ms = Math.min(ms, wallMs);
+  }
+  return ms;
+}
+
+function formatClock(ms) {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  const hh = Math.floor(sec / 3600);
+  const mm = Math.floor((sec % 3600) / 60);
+  const ss = sec % 60;
+  return [hh, mm, ss].map((n) => String(n).padStart(2, '0')).join(':');
+}
+
+function formatBadgeText(ms, status) {
+  if (status === 'PAUSED_MANUAL') return 'PAUS';
+  if (status === 'ON_BREAK') return 'BRK';
+  if (status === 'GHOST') return 'GHST';
+  if (status === 'IDLE') return 'IDLE';
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  const hh = Math.floor(sec / 3600);
+  const mm = Math.floor((sec % 3600) / 60);
+  const ss = sec % 60;
+  if (hh > 0) return `${hh}:${String(mm).padStart(2, '0')}`;
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+}
+
+function statusLabel(status) {
+  if (status === 'PAUSED_MANUAL') return 'Paused';
+  if (status === 'ON_BREAK') return 'On break';
+  if (status === 'GHOST') return 'Ghost — paused';
+  if (status === 'IDLE') return 'Idle — paused';
+  return 'Working';
 }
 
 async function runHeartbeat() {
@@ -175,15 +265,21 @@ async function runHeartbeat() {
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === HEARTBEAT_ALARM) {
+    await syncSystemActivity();
     await runHeartbeat();
+    return;
+  }
+  if (alarm.name === TOKEN_REFRESH_ALARM) {
+    const refresh = await get(LS.refresh);
+    if (refresh) await refreshAccessToken();
     return;
   }
   if (alarm.name !== ALARM) return;
 
   const sessionId = await get(LS.sessionId);
-  const paused = await get(LS.paused);
+  if (!sessionId || (await isTrackingFrozen())) return;
 
-  if (!sessionId || paused) return;
+  await syncSystemActivity();
 
   const lastRaw = await get(LS.lastActivity);
   const started = await get(LS.clockStarted);
@@ -226,9 +322,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
         title: 'Liftbrand PulseTrack',
-        message: 'No activity for 15 min — timer paused. Ghost time is recording.',
+        message: 'No computer activity for 15 min — timer paused. Ghost time is recording.',
       });
-      toastPage('Timer paused: no keyboard/mouse for 15 minutes. Tap Resume focus when you return.');
+      toastPage('Timer paused: no keyboard/mouse on this computer for 15 minutes. Tap Resume focus when you return.');
       refreshToolbarBadge();
       return;
     }
@@ -238,21 +334,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         method: 'POST',
         body: JSON.stringify({ sessionId, level: 'L2' }),
       });
-      await syncFromApi('/api/sessions/state/idle', {
-        method: 'POST',
-        body: JSON.stringify({ sessionId }),
-      });
-      await put({ [LS.l2Sent]: true, [LS.l1Sent]: true, [LS.sessionStatus]: 'IDLE' });
-      await runHeartbeat();
-
+      await put({ [LS.l2Sent]: true, [LS.l1Sent]: true });
       chrome.notifications.create('pulsetrack-l2', {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
         title: 'Still there?',
-        message: 'No activity detected — active time paused.',
+        message: 'No computer activity for 10 min — timer pauses at 15 min without input.',
       });
-      toastPage('Active time paused — move mouse or keyboard to stay on the clock.');
-      refreshToolbarBadge();
+      toastPage('Still no activity on this computer — move mouse or keyboard before 15 min.');
       return;
     }
 
@@ -266,9 +355,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
         title: 'Quick check-in',
-        message: 'Still working? Move mouse or keyboard to keep tracking.',
+        message: 'Still working? Use mouse or keyboard anywhere on this PC to keep tracking.',
       });
-      toastPage('Gentle nudge — interact to keep active time running.');
+      toastPage('Gentle nudge — use this computer to keep active time running.');
       return;
     }
   } catch {
@@ -298,6 +387,11 @@ async function reschedule() {
   await chrome.alarms.clear(ALARM);
   await chrome.alarms.clear(HEARTBEAT_ALARM);
   await chrome.alarms.create(ALARM, { periodInMinutes: 1 });
+  const refresh = await get(LS.refresh);
+  if (refresh) {
+    await chrome.alarms.clear(TOKEN_REFRESH_ALARM);
+    await chrome.alarms.create(TOKEN_REFRESH_ALARM, { periodInMinutes: 10 });
+  }
   const sessionId = await get(LS.sessionId);
   if (sessionId) {
     await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 2 });
@@ -313,47 +407,57 @@ chrome.storage.onChanged.addListener((chg, area) => {
     LS.l2Min in chg ||
     LS.l3Min in chg ||
     LS.access in chg ||
+    LS.refresh in chg ||
     LS.clockStarted in chg ||
-    LS.liveActiveMs in chg
+    LS.liveActiveMs in chg ||
+    LS.liveAnchorAt in chg ||
+    LS.sessionStatus in chg ||
+    LS.clockInAt in chg
   ) {
     reschedule();
     refreshToolbarBadge();
   }
 });
 
-function formatBadge(ms) {
-  const sec = Math.max(0, Math.floor(ms / 1000));
-  const hh = Math.floor(sec / 3600);
-  const mm = Math.floor((sec % 3600) / 60);
-  if (hh > 0) return `${hh}h${String(mm).padStart(2, '0')}`;
-  if (mm > 0) return `${mm}m`;
-  return 'on';
-}
-
 async function refreshToolbarBadge() {
   const sessionId = await get(LS.sessionId);
   const paused = await get(LS.paused);
   const status = await get(LS.sessionStatus);
-  const liveMs = Number((await get(LS.liveActiveMs)) || 0);
+  const liveMs = await computeDisplayMs();
 
-  if (!sessionId || paused) {
+  if (!sessionId) {
     chrome.action.setBadgeText({ text: '' });
+    chrome.action.setTitle({ title: 'Liftbrand PulseTrack — signed out' });
     chrome.action.setBadgeBackgroundColor({ color: '#5c4033' });
     return;
   }
 
-  const text = formatBadge(liveMs);
+  if (paused || status === 'PAUSED_MANUAL') {
+    chrome.action.setBadgeText({ text: 'PAUS' });
+    chrome.action.setBadgeBackgroundColor({ color: '#64748b' });
+    chrome.action.setTitle({ title: `${formatClock(liveMs)} — Paused manually` });
+    return;
+  }
+
+  const text = formatBadgeText(liveMs, status);
   chrome.action.setBadgeText({ text });
   chrome.action.setBadgeBackgroundColor({
-    color: status === 'GHOST' ? '#b45309' : status === 'IDLE' ? '#d97706' : '#5c4033',
+    color:
+      status === 'GHOST' ? '#b45309' :
+      status === 'IDLE' ? '#d97706' :
+      status === 'ON_BREAK' ? '#2563eb' :
+      '#5c4033',
+  });
+  chrome.action.setTitle({
+    title: `${formatClock(liveMs)} — ${statusLabel(status)} | Liftbrand PulseTrack`,
   });
 }
 
 if (chrome.idle?.setDetectionInterval) {
-  chrome.idle.setDetectionInterval(60);
+  chrome.idle.setDetectionInterval(SYSTEM_IDLE_SEC);
   chrome.idle.onStateChanged.addListener(async (state) => {
     if (state === 'active') {
-      await bumpActivityFromBridge();
+      await markUserActive();
       return;
     }
     if (state === 'idle' || state === 'locked') {
@@ -363,7 +467,10 @@ if (chrome.idle?.setDetectionInterval) {
   });
 }
 
-setInterval(refreshToolbarBadge, 15_000);
-setInterval(runHeartbeat, 120_000);
+setInterval(refreshToolbarBadge, 1000);
+setInterval(async () => {
+  const sessionId = await get(LS.sessionId);
+  if (sessionId && !(await isTrackingFrozen())) await syncSystemActivity();
+}, 30_000);
 refreshToolbarBadge();
 reschedule();
